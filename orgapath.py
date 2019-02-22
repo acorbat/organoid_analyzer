@@ -2,12 +2,18 @@ import pathlib
 import yaml
 import numpy as np
 
+import time
+import queue
+from threading import Thread
+
 from skimage import io
 from skimage.viewer import ImageViewer
 from skimage.viewer.canvastools import RectangleTool
 from skimage.viewer.plugins.base import Plugin
 
+
 def scan_folder(folder):
+    """Iterator yielding every pair of transmission and yfp stacks in folder."""
     p = pathlib.Path(folder)
     for yfp in p.rglob('*YFP*.TIF'):
         if yfp.is_dir():
@@ -18,11 +24,27 @@ def scan_folder(folder):
             
 
 def create_base_yaml(folder, output):
+    """Generates a yaml dictionary at output with all the pairs of stacks found
+    at folder."""
     append_to_yaml(folder, output, {})
         
         
 def append_to_yaml(folder, output, filename_or_dict):
-    
+    """Appends pairs of stacks found at folder to the yaml dictionary at
+    filename_or_dict (or dictionary) and saves it
+    at output.
+
+    Parameters
+    ----------
+    folder : str
+        path to folder where stacks are located
+    output : str
+        path to yaml file where dictionary is to be saved
+    filename_or_dict : str or dict
+        path to yaml dictionary or dictionary to which new stack paths are to be
+        appended
+    """
+
     if isinstance(filename_or_dict, str):
         with open(filename_or_dict, 'r', encoding='utf-8') as fi:
             d = yaml.load(fi.read())
@@ -34,8 +56,11 @@ def append_to_yaml(folder, output, filename_or_dict):
     
     with open(output, 'w', encoding='utf-8') as fo:
         fo.write(yaml.dump(d))
-            
+
+
 def test_yaml(filename):
+    """Checks whether files at the dictionary exist in the saved path and if
+    crop coordinates are saved."""
     with open(filename, 'r', encoding='utf-8') as fi:
         d = yaml.load(fi.read())
     cnt = 0
@@ -50,11 +75,6 @@ def test_yaml(filename):
     print('---')
     print('%d out of %d. Crop %d' % (cnt, len(d), cnt3))
     
-    
-
-import queue
-from threading import Thread
-
 
 # Object used by _background_consumer to signal the source is exhausted
 # to the main thread.
@@ -140,10 +160,10 @@ class ibuffer(object):
         if item is _sentinel:
             raise StopIteration()
         return item
-    
-import time
+
 
 class Timer(object):
+    """As clear as the name."""
     def __enter__(self):
         self.t = time.clock()
         return self
@@ -153,6 +173,10 @@ class Timer(object):
         
 
 def load_mp_image(filenames, dcrop=None):
+    """Iterates over the given list of filenames and yields filename and either
+    the saved crop coordinates (if dcrop has them), a normalized image to
+    perform the crop or None if 'single clones' is inside filename or errors
+    arise while getting the image."""
     for filename in filenames:
         k = filename
         if dcrop and k in dcrop and 'crop' in dcrop[k]:
@@ -164,7 +188,8 @@ def load_mp_image(filenames, dcrop=None):
                 with Timer() as t:
                     original = io.imread(filename)
                     image = np.min(original, axis=0)
-                    image = (image - np.min(image)) / (np.max(image) - np.min(image))
+                    image = (image - np.min(image)) / \
+                            (np.max(image) - np.min(image))
                 print('%.2f: %s' % (t.elapsed, filename))    
                 yield filename, image
             except:
@@ -172,7 +197,9 @@ def load_mp_image(filenames, dcrop=None):
 
     
 def add_crop_to_yaml(filename, crop_filename=None):
-
+    """Opens filename dictionary and asks for a crop to be saved at filename +
+    _crop. If crop_filename is given, then it checks whether a crop has been
+    saved."""
     if crop_filename is not None:
         with open(crop_filename, 'r', encoding='utf-8') as fi:
             dcrop = yaml.load(fi.read())
@@ -185,11 +212,12 @@ def add_crop_to_yaml(filename, crop_filename=None):
     dout = {}
         
     try:
-        for ndx, (k, image_or_crop) in enumerate(ibuffer(10, load_mp_image(dinput.keys(), dcrop))):
+        for ndx, (k, image_or_crop) in \
+                enumerate(ibuffer(10, load_mp_image(dinput.keys(), dcrop))):
             print('%d/%d: %s' % (ndx, len(dinput), k))
             v = dinput[k]
 
-            if  image_or_crop is None:
+            if image_or_crop is None:
                 pass
 
             elif isinstance(image_or_crop, (list, tuple)):
