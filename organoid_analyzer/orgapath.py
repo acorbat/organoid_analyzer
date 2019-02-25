@@ -15,8 +15,8 @@ from skimage.viewer.plugins.base import Plugin
 def scan_folder(folder):
     """Iterator yielding every pair of transmission and yfp stacks in folder."""
     p = pathlib.Path(folder)
-    for yfp in p.rglob('*YFP*.TIF'):
-        if yfp.is_dir():
+    for yfp in p.rglob('*YFP*'):
+        if yfp.is_dir() or yfp.suffix.lower() != '.tif':
             continue
         trans = yfp.with_name(yfp.name.replace('YFP', 'Trans'))
         if trans.exists():
