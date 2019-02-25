@@ -3,9 +3,46 @@ import itertools as itools
 
 from scipy import signal
 import numpy as np
-from skimage import segmentation, draw, filters, measure, io as skio, morphology, exposure, feature, transform
+from skimage import segmentation, draw, filters, measure, io as skio, \
+    morphology, exposure, feature, transform, util
+from skimage.filters import sobel, threshold_otsu
 
 active_contour = segmentation.active_contour
+
+
+def mask_organoids(img, min_organoid_size=1000):
+    """Processes transmission image in order to find organoids. It performs:
+    1. Rescaling of intensity to float.
+    2. inversion of intensities.
+    3. Gamma adjustment of 5.
+    4. filtered with sobel to find edges.
+    5. Thresholded with Otsu.
+    6. small holes and small objects are removed according to
+    min_organoid_size.
+
+    Parameters
+    ----------
+    img : np.array
+        transmission image of specific timepoint.
+    min_organoid_size : int
+        minimum area in pixels of a typical organoid.
+
+    Returns
+    -------
+    mask : np.array(dtype=bool)
+        boolean mask corresponding to the segmentation performed."""
+
+    processed_image = util.img_as_float(img)
+    processed_image = util.invert(processed_image)
+    processed_image = exposure.adjust_gamma(processed_image, 5)
+    processed_image = sobel(processed_image)
+    threshold = threshold_otsu(processed_image)
+    mask = processed_image > threshold
+    mask = morphology.remove_small_holes(mask, area_threshold=min_organoid_size)
+    mask = morphology.remove_small_objects(mask, min_size=min_organoid_size)
+
+    return mask
+
 
 def snake_from_extent(extents, shape):
     (xmin, xmax, ymin, ymax) = extents
