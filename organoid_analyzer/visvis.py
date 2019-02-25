@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-import morpho
+from organoid_analyzer import morpho
 
 def show_snakes(img, *snakes):
     fig, ax = plt.subplots(figsize=(7, 7))

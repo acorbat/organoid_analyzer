@@ -27,16 +27,16 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
                            init_snake, alpha=0.015, beta=10, gamma=gamma,
                            w_line=mult*0.1, w_edge=1)       
             
-    im = filters.gaussian(img, 2)
+    # im = filters.gaussian(img, 2)
 
     # img = w_line*img + w_edge*edge[0]
     # alpha=0.01, beta=0.1,
     # w_line=0, w_edge=1, gamma=0.01,
     # bc='periodic', max_px_move=1.0,
     # max_iterations=2500, convergence=0.1
-    snake = active_contour(im,
-                           snake, alpha=0.015, beta=10, gamma=gamma*100,
-                           w_line=mult*0.1, w_edge=1)
+    # snake = active_contour(im,
+    #                        snake, alpha=0.015, beta=10, gamma=gamma*100,
+    #                        w_line=mult*0.1, w_edge=1)
     return snake
 
 
