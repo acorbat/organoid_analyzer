@@ -1,5 +1,6 @@
 import os
 import itertools as itools
+import multiprocessing
 
 import pandas as pd
 from scipy import signal
@@ -479,23 +480,113 @@ def protocol(stack, region):
     return e_snks, i_snks
 
 
-def timepoint_to_df():
-    
-    to_save = {'external_snakes': e_snk, 'internal_snakes': i_snk,
-               'lumen_snakes': l_snk}
+def timepoint_to_df(params):
+    """Analyzes a single timepoint and generates a small pandas DataFrame.
+
+    Parameters
+    ----------
+    params : list
+        ndx, tran, fluo, region, filepath, fluo_filepath
+
+    Returns
+    -------
+    df : pandas DataFrame
+        Small DataFrame with the results of a single timepoint analysis."""
+
+    ndx, tran, fluo, region, filepath, fluo_filepath = params
+
+    to_save = analyze_timepoint(tran, fluo, region)
+
     df = pd.DataFrame(to_save)
-    df['tran_path'] = file
-    df['fluo_path'] = saved[file]['yfp']
-    df['crop'] = saved[file]['crop']
+    df['tran_path'] = filepath
+    df['fluo_path'] = fluo_filepath
+    df['crop'] = region
+    df['timepoint'] = ndx
+
+    return df
 
 
 def analyze_timepoint(tran, fluo, region):
+    """Analyzes a single pair of transmission and fluorescence timepoint, with
+    the specified region of the desired organoid and returns a dictionary with
+    the results.
+
+    Parameters
+    ----------
+    tran : np.array
+        transmission image of the organoids
+    fluo : np.array
+        fluorescence channel of the organoids
+    region : list, tuple
+        coordinates of the crop region
+
+    Returns : dict
+        Returns a dictionary with the results of the analysis.
+        keys:
+            external_snakes : list
+                List of coordinates of the external contour
+            internal_snakes : list
+                List of coordinates of the internal contour
+            lumen_snakes : list
+                List of coordinates of the lumen contour obtained from
+                fluorescence channel"""
+
     mask = mask_organoids(tran)
     e_snk = find_external(mask, region)
     i_snk, _ = find_internal(tran, e_snk)
     l_snk = find_external(fluo, region)
 
-    return e_snk, i_snk, l_snk
+    results = {'external_snakes': [e_snk], 'internal_snakes': [i_snk],
+               'lumen_snakes': [l_snk]}
+
+    return results
+
+
+def my_iterator(tran_stack, fluo_stack, region, filepath, fluo_filepath):
+    """Generates an iterator over the stack of images to use for
+    multiprocessing."""
+    for ndx, (tran0, fluo0) in enumerate(tran_stack, fluo_stack):
+        yield ndx, tran0, fluo0, region, filepath, fluo_filepath
+
+
+def analyze_file(filepath, fluo_filepath, region, workers=5):
+    """Multiprocesses the analysis over a complete stack.
+
+    Parameters
+    ----------
+    filepath : str
+        path to the transmission stack
+    fluo_filepath : str
+        path to the fluorescence stack
+    region : list, tuple
+        coordinates of the cropped region
+    workers : int (optional)
+        amount of threads to be used for analysis
+
+    Returns
+    -------
+    df : pandas DataFrame
+        DataFrame containing all the results from the analysis"""
+
+    tran_stack = skio.imread(filepath)
+    fluo_stack = skio.imread(fluo_filepath)
+
+    with multiprocessing.Pool(workers) as p:
+        file_results = []
+        for this_df in p.imap_unordered(timepoint_to_df,
+                                        my_iterator(tran_stack, fluo_stack,
+                                                    region,
+                                                    filepath, fluo_filepath)):
+            file_results.append(this_df)
+
+    df = pd.concat(file_results, ignore_index=True)
+    df.sort_values('timepoint', inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
+    return df
+
+
+
 
 
 def analyze_timeseries(stacks, region):
@@ -507,11 +598,11 @@ def analyze_timeseries(stacks, region):
         tran0 = stacks[0, ndx, :, :]
         fluo0 = stacks[1, ndx, :, :]
 
-        e_snk, i_snk, l_snk = analyze_timepoint(tran0, fluo0, region)
+        result = analyze_timepoint(tran0, fluo0, region)
 
-        e_snks.append(e_snk)
-        i_snks.append(i_snk)
-        l_snks.append(l_snk)
+        e_snks.append(result['e_snk'])
+        i_snks.append(result['i_snk'])
+        l_snks.append(result['l_snk'])
 
     return e_snks, i_snks, l_snks
         
