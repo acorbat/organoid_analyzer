@@ -475,6 +475,27 @@ def protocol(stack, region):
         i_snks.append(i_snk)
     
     return e_snks, i_snks
+
+
+def analyze_timeseries(stacks, region):
+    e_snks = []
+    i_snks = []
+    l_snks = []
+    for ndx in range(stacks.shape[1]):
+        print(ndx)
+        tran0 = stacks[0, ndx, :, :]
+        fluo0 = stacks[1, ndx, :, :]
+
+        mask = mask_organoids(tran0)
+        e_snk = find_external(mask, region)
+        i_snk, _ = find_internal(tran0, e_snk)
+        l_snk = find_external(fluo0, region)
+
+        e_snks.append(e_snk)
+        i_snks.append(i_snk)
+        l_snks.append(l_snk)
+
+    return e_snks, i_snks, l_snks
         
             
 def test_circle():
