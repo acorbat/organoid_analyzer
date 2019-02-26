@@ -57,7 +57,7 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
     # init_stake = snake or Rectangle extents: (xmin, xmax, ymin, ymax).
     
     if isinstance(init_snake, (tuple, list)):
-        init_snake = snake_from_extent(init_snake, img.shape)
+        init_snake = snake_from_extent(init_snake, img.T.shape)
         
     img = img / np.max(img)
     
@@ -480,6 +480,7 @@ def protocol(stack, region):
 
 
 def timepoint_to_df():
+    
     to_save = {'external_snakes': e_snk, 'internal_snakes': i_snk,
                'lumen_snakes': l_snk}
     df = pd.DataFrame(to_save)
