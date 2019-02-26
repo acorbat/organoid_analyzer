@@ -1,6 +1,7 @@
 import os
 import itertools as itools
 
+import pandas as pd
 from scipy import signal
 import numpy as np
 from skimage import segmentation, draw, filters, measure, io as skio, \
@@ -45,6 +46,7 @@ def mask_organoids(img, min_organoid_size=1000):
 
 
 def snake_from_extent(extents, shape):
+    """Generate coordinates for snake from the coordinates of crop."""
     (xmin, xmax, ymin, ymax) = extents
     r = [xmin, xmin, xmax, xmax]
     c = [ymin, ymax, ymax, ymin]
@@ -477,6 +479,24 @@ def protocol(stack, region):
     return e_snks, i_snks
 
 
+def timepoint_to_df():
+    to_save = {'external_snakes': e_snk, 'internal_snakes': i_snk,
+               'lumen_snakes': l_snk}
+    df = pd.DataFrame(to_save)
+    df['tran_path'] = file
+    df['fluo_path'] = saved[file]['yfp']
+    df['crop'] = saved[file]['crop']
+
+
+def analyze_timepoint(tran, fluo, region):
+    mask = mask_organoids(tran)
+    e_snk = find_external(mask, region)
+    i_snk, _ = find_internal(tran, e_snk)
+    l_snk = find_external(fluo, region)
+
+    return e_snk, i_snk, l_snk
+
+
 def analyze_timeseries(stacks, region):
     e_snks = []
     i_snks = []
@@ -486,10 +506,7 @@ def analyze_timeseries(stacks, region):
         tran0 = stacks[0, ndx, :, :]
         fluo0 = stacks[1, ndx, :, :]
 
-        mask = mask_organoids(tran0)
-        e_snk = find_external(mask, region)
-        i_snk, _ = find_internal(tran0, e_snk)
-        l_snk = find_external(fluo0, region)
+        e_snk, i_snk, l_snk = analyze_timepoint(tran0, fluo0, region)
 
         e_snks.append(e_snk)
         i_snks.append(i_snk)
