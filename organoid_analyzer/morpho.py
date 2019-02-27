@@ -55,6 +55,7 @@ def snake_from_extent(extents, shape):
 
 
 def find_external(img, init_snake, mult=-1, gamma=0.0001):
+    """Applies active contours to img with an initial init_snake."""
     # init_stake = snake or Rectangle extents: (xmin, xmax, ymin, ymax).
     
     if isinstance(init_snake, (tuple, list)):
@@ -590,6 +591,8 @@ def analyze_file(filepath, fluo_filepath, region, workers=5):
 
 
 def analyze_timeseries(stacks, region):
+    """Analyzes a complete stack using region as crop coordinates and returns a
+    list of snakes for each border found."""
     e_snks = []
     i_snks = []
     l_snks = []
