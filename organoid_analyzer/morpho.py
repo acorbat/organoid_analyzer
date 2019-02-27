@@ -1,6 +1,8 @@
 import os
 import itertools as itools
+
 import multiprocessing
+import yaml
 
 import pandas as pd
 from scipy import signal
@@ -587,7 +589,25 @@ def analyze_file(filepath, fluo_filepath, region, workers=5):
     return df
 
 
+def analyze_yaml(yaml_path, output_path):
+    """Loads a yaml file and analyzes each file in the dictionary that has a
+    crop selected."""
 
+    # Load file
+    with open(yaml_path, 'r', encoding='utf-8') as fi:
+        file_dict = yaml.load(fi.read())
+
+    all_dfs = []
+    for file in file_dict.keys():
+        fluo_file = file_dict[file]['yfp']
+        region = file_dict[file]['crop']
+
+        this_file_res = analyze_file(file, fluo_file, region)
+
+        all_dfs.append(this_file_res)
+
+    df = pd.concat(all_dfs, ignore_index=True)
+    df.to_pickle(output_path)
 
 
 def analyze_timeseries(stacks, region):
