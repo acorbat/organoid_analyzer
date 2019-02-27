@@ -1,13 +1,55 @@
 import os
 import itertools as itools
 
+import multiprocessing
+import yaml
+
+import pandas as pd
 from scipy import signal
 import numpy as np
-from skimage import segmentation, draw, filters, measure, io as skio, morphology, exposure, feature, transform
+from skimage import segmentation, draw, filters, measure, io as skio, \
+    morphology, exposure, feature, transform, util
+from skimage.filters import sobel, threshold_otsu
 
 active_contour = segmentation.active_contour
 
+
+def mask_organoids(img, min_organoid_size=1000):
+    """Processes transmission image in order to find organoids. It performs:
+    1. Rescaling of intensity to float.
+    2. inversion of intensities.
+    3. Gamma adjustment of 5.
+    4. filtered with sobel to find edges.
+    5. Thresholded with Otsu.
+    6. small holes and small objects are removed according to
+    min_organoid_size.
+
+    Parameters
+    ----------
+    img : np.array
+        transmission image of specific timepoint.
+    min_organoid_size : int
+        minimum area in pixels of a typical organoid.
+
+    Returns
+    -------
+    mask : np.array(dtype=bool)
+        boolean mask corresponding to the segmentation performed."""
+
+    processed_image = util.img_as_float(img)
+    processed_image = util.invert(processed_image)
+    processed_image = exposure.adjust_gamma(processed_image, 5)
+    processed_image = sobel(processed_image)
+    threshold = threshold_otsu(processed_image)
+    mask = processed_image > threshold
+    mask = morphology.remove_small_holes(mask, area_threshold=min_organoid_size)
+    mask = morphology.remove_small_objects(mask, min_size=min_organoid_size)
+
+    return mask
+
+
 def snake_from_extent(extents, shape):
+    """Generate coordinates for snake from the coordinates of crop."""
     (xmin, xmax, ymin, ymax) = extents
     r = [xmin, xmin, xmax, xmax]
     c = [ymin, ymax, ymax, ymin]
@@ -15,10 +57,11 @@ def snake_from_extent(extents, shape):
 
 
 def find_external(img, init_snake, mult=-1, gamma=0.0001):
+    """Applies active contours to img with an initial init_snake."""
     # init_stake = snake or Rectangle extents: (xmin, xmax, ymin, ymax).
     
     if isinstance(init_snake, (tuple, list)):
-        init_snake = snake_from_extent(init_snake, img.shape)
+        init_snake = snake_from_extent(init_snake, img.T.shape)
         
     img = img / np.max(img)
     
@@ -27,16 +70,16 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
                            init_snake, alpha=0.015, beta=10, gamma=gamma,
                            w_line=mult*0.1, w_edge=1)       
             
-    im = filters.gaussian(img, 2)
+    # im = filters.gaussian(img, 2)
 
     # img = w_line*img + w_edge*edge[0]
     # alpha=0.01, beta=0.1,
     # w_line=0, w_edge=1, gamma=0.01,
     # bc='periodic', max_px_move=1.0,
     # max_iterations=2500, convergence=0.1
-    snake = active_contour(im,
-                           snake, alpha=0.015, beta=10, gamma=gamma*100,
-                           w_line=mult*0.1, w_edge=1)
+    # snake = active_contour(im,
+    #                        snake, alpha=0.015, beta=10, gamma=gamma*100,
+    #                        w_line=mult*0.1, w_edge=1)
     return snake
 
 
@@ -59,7 +102,8 @@ def find_internal(img, external):
     radii = (lengths + lengths[opondx]) / 2
         
     hough_radii = np.arange(int(np.min(radii)*.75), int(np.min(radii)*1.1))
-    img = exposure.rescale_intensity(filters.gaussian(img, 3), in_range='image', out_range='uint8')
+    img = exposure.rescale_intensity(filters.gaussian(img, 3),
+                                     in_range='image', out_range='uint8')
     edges = feature.canny(img, sigma=3, low_threshold=10, high_threshold=50)
 
     # Detect two radii
@@ -94,7 +138,7 @@ def find_internal(img, external):
             print(np.sum(msk[rr, cc])/len(rr))
     
     if DEBUG:
-        import visvis
+        from organoid_analyzer import visvis
         visvis.show_snakes(img, external, *snks)
        
     if len(valid):
@@ -107,7 +151,8 @@ def find_internal(img, external):
     
     if len(radii):
         sel = np.argmax(radii)
-        snake = np.asarray(draw.circle_perimeter(cx[sel], cy[sel], radii[sel])).T
+        snake = np.asarray(draw.circle_perimeter(cx[sel], cy[sel],
+                                                 radii[sel])).T
         return sort_snake(snake), edges
     else:
         print('Warning: no circles found')
@@ -132,18 +177,21 @@ def mask_to_snake(mask):
     out = np.nonzero(seg)
     return np.asarray(out).T
 
+
 def snake_to_mask(snake, shape):
     rr, cc = draw.polygon(snake[:,1], snake[:,0], shape)
     img = np.zeros(shape, 'uint8')
     img[rr, cc] = 1
     return img
 
+
 def _and_(*conds):
     out = conds[0]
     for current in conds[1:]:
         out = np.logical_and(out, current)
     return out
-            
+
+
 def line(r1, c1, r2, c2, shape, blank=None):
     im = np.zeros(shape, dtype='uint8')
     if r1 == r2:
@@ -174,7 +222,8 @@ def measure_thickness(internal, external):
     center, rho, theta = polar_snake(insk)
     out = []
     for ndx, the in enumerate(theta):
-        rr, cc = line(int(center[0]), int(center[1]), int(insk[ndx, 0]), int(insk[ndx, 1]), 
+        rr, cc = line(int(center[0]), int(center[1]), int(insk[ndx, 0]),
+                      int(insk[ndx, 1]),
                       internal.shape, external)
         dd1 = np.hypot(rr - insk[ndx, 0], cc - insk[ndx, 1])
         dd2 = np.hypot(rr - center[0], cc - center[1])
@@ -186,25 +235,34 @@ def measure_thickness(internal, external):
 
 
 def _make_mask_patterns(root_folder, number):
-    i_pattern = os.path.join(root_folder, '{:03d}', 'YFP', 'YFP_Mask_{:03d}_%04d.tiff').format(number, number)
-    e_pattern = os.path.join(root_folder, '{:03d}','Trans', 'Trans_Mask_%04d.tiff').format(number)
+    i_pattern = os.path.join(root_folder, '{:03d}', 'YFP',
+                             'YFP_Mask_{:03d}_%04d.tiff').format(number, number)
+    e_pattern = os.path.join(root_folder, '{:03d}', 'Trans',
+                             'Trans_Mask_%04d.tiff').format(number)
     return i_pattern, e_pattern
 
 
 def _make_imgs_patterns(root_folder, number):
-    i_pattern = os.path.join(root_folder, '{:03d}', 'YFP', 'YFP_Mask_{:03d}_%04d.tiff').format(number, number)
-    e_pattern = os.path.join(root_folder, '{:03d}','Trans', 'Trans_Mask_%04d.tiff').format(number)
+    i_pattern = os.path.join(root_folder, '{:03d}', 'YFP',
+                             'YFP_Mask_{:03d}_%04d.tiff').format(number, number)
+    e_pattern = os.path.join(root_folder, '{:03d}', 'Trans',
+                             'Trans_Mask_%04d.tiff').format(number)
     return i_pattern, e_pattern
 
+
 def make_mask_patterns(root_folder, number):
-    i_pattern = os.path.join(root_folder, '{:03d}', 'YFP', 'YFP_Mask_{:03d}_%04d.tiff').format(number, number)
-    e_pattern = os.path.join(root_folder, '{:03d}','Trans', 'Trans_Mask_%04d.tiff').format(number)
+    i_pattern = os.path.join(root_folder, '{:03d}', 'YFP',
+                             'YFP_Mask_{:03d}_%04d.tiff').format(number, number)
+    e_pattern = os.path.join(root_folder, '{:03d}', 'Trans',
+                             'Trans_Mask_%04d.tiff').format(number)
     return i_pattern, e_pattern
 
 
 def make_imgs_patterns(root_folder, number):
-    i_pattern = os.path.join(root_folder, '{:03d}', 'YFP', 'YFP_Mask_{:03d}_%04d.tiff').format(number, number)
-    e_pattern = os.path.join(root_folder, '{:03d}','Trans', 'Trans_Mask_%04d.tiff').format(number)
+    i_pattern = os.path.join(root_folder, '{:03d}', 'YFP',
+                             'YFP_Mask_{:03d}_%04d.tiff').format(number, number)
+    e_pattern = os.path.join(root_folder, '{:03d}', 'Trans',
+                             'Trans_Mask_%04d.tiff').format(number)
     return i_pattern, e_pattern
 
 
@@ -228,6 +286,7 @@ def angular_mn_mx(nangles):
     next(second_it)
     yield from zip(first_it, second_it)
     
+
 def stat_in_angle(angles, values, min_angle, max_angle, func):
     sel = np.logical_and(angles >= min_angle, angles < max_angle)
     return func(values[sel])
@@ -239,9 +298,6 @@ def angular_stats(angles, values, nangles, func):
         out.append(stat_in_angle(angles, values, mn, mx, func))
     
     return out
-    
-
-from scipy.ndimage.filters import uniform_filter
 
 
 def rolling_window(a, window):
@@ -356,8 +412,6 @@ def find_bulges(thickness_out, nangles, thresh=None):
                         break
                     binary[nn, ndx] = 1
                     last = sig[nn]
-                    
-                    
             
     elif isinstance(thresh, (int, float)):
         binary = st >= thresh
@@ -384,10 +438,9 @@ def iter_imgs(root_folder, number):
         b[b > 0] = 1
         yield a, b
                 
-       
-    
+
 def create_thickness_out(internals, externals):
-    return [morpho.measure_thickness(imsk, emsk) 
+    return [measure_thickness(imsk, emsk)
             for imsk, emsk in zip(internals, externals)]
 
 
@@ -406,7 +459,8 @@ def create_bulge_masks(internals, externals, labeled_bulge):
         center, rho, theta = polar_snake(insk)
 
         if out is None:
-            out = np.zeros((len(internals), 3 + len(ub),) + imsk.shape, dtype='uint16')                        
+            out = np.zeros((len(internals), 3 + len(ub),) + imsk.shape,
+                           dtype='uint16')
                            
         epi_msk = emsk - imsk
         [rr, cc] = np.nonzero(epi_msk)
@@ -424,6 +478,18 @@ def create_bulge_masks(internals, externals, labeled_bulge):
     return out
 
 
+def get_description(mask, descriptors=None):
+    descriptors = ['area', 'centroid', 'convex_area', 'eccentricity',
+                   'equivalent_diameter', 'euler_number', 'extent',
+                   'major_axis_length', 'minor_axis_length', 'moments_hu',
+                   'perimeter', 'solidity', ]
+    description = {}
+    for region in measure.regionprops(mask):
+        for prop in descriptors:
+            description[prop] = region[prop]
+        return description
+
+
 def protocol(stack, region):
     e_snks = []
     i_snks = []
@@ -438,6 +504,170 @@ def protocol(stack, region):
         i_snks.append(i_snk)
     
     return e_snks, i_snks
+
+
+def timepoint_to_df(params):
+    """Analyzes a single timepoint and generates a small pandas DataFrame.
+
+    Parameters
+    ----------
+    params : list
+        ndx, tran, fluo, region, filepath, fluo_filepath
+
+    Returns
+    -------
+    df : pandas DataFrame
+        Small DataFrame with the results of a single timepoint analysis."""
+
+    ndx, tran, fluo, region, filepath, fluo_filepath = params
+
+    print('analyzing timepoint %s from file %s' % (ndx, filepath))
+
+    to_save = analyze_timepoint(tran, fluo, region)
+    mask = snake_to_mask(to_save['external_snakes'][0], tran.shape)
+    description = get_description(mask)
+
+    df = pd.DataFrame(to_save)
+
+    for prop in description.keys():
+        if isinstance(description[prop], (tuple, list, np.ndarray)):
+            df[prop] = [description[prop]]
+        else:
+            df[prop] = description[prop]
+
+    df['tran_path'] = filepath
+    df['fluo_path'] = fluo_filepath
+    df['crop'] = [region]
+    df['timepoint'] = ndx
+
+    return df
+
+
+def analyze_timepoint(tran, fluo, region):
+    """Analyzes a single pair of transmission and fluorescence timepoint, with
+    the specified region of the desired organoid and returns a dictionary with
+    the results.
+
+    Parameters
+    ----------
+    tran : np.array
+        transmission image of the organoids
+    fluo : np.array
+        fluorescence channel of the organoids
+    region : list, tuple
+        coordinates of the crop region
+
+    Returns :
+    -------
+    results : dict
+        Returns a dictionary with the results of the analysis.
+        keys:
+            external_snakes : list
+                List of coordinates of the external contour
+            internal_snakes : list
+                List of coordinates of the internal contour
+            lumen_snakes : list
+                List of coordinates of the lumen contour obtained from
+                fluorescence channel"""
+
+    mask = mask_organoids(tran)
+    e_snk = find_external(mask, region)
+    i_snk, _ = find_internal(tran, e_snk)
+    l_snk = find_external(fluo, region)
+
+    results = {'external_snakes': [e_snk], 'internal_snakes': [i_snk],
+               'lumen_snakes': [l_snk]}
+
+    return results
+
+
+def my_iterator(tran_stack, fluo_stack, region, filepath, fluo_filepath):
+    """Generates an iterator over the stack of images to use for
+    multiprocessing."""
+    for ndx, (tran0, fluo0) in enumerate(zip(tran_stack, fluo_stack)):
+        yield ndx, tran0, fluo0, region, filepath, fluo_filepath
+
+
+def analyze_file(filepath, fluo_filepath, region, workers=5):
+    """Multiprocesses the analysis over a complete stack.
+
+    Parameters
+    ----------
+    filepath : str
+        path to the transmission stack
+    fluo_filepath : str
+        path to the fluorescence stack
+    region : list, tuple
+        coordinates of the cropped region
+    workers : int (optional)
+        amount of threads to be used for analysis
+
+    Returns
+    -------
+    df : pandas DataFrame
+        DataFrame containing all the results from the analysis"""
+
+    tran_stack = skio.imread(filepath)
+    fluo_stack = skio.imread(fluo_filepath)
+
+    with multiprocessing.Pool(workers) as p:
+        file_results = []
+        for this_df in p.imap_unordered(timepoint_to_df,
+                                        my_iterator(tran_stack, fluo_stack,
+                                                    region,
+                                                    filepath, fluo_filepath)):
+            file_results.append(this_df)
+
+    df = pd.concat(file_results, ignore_index=True)
+    df.sort_values('timepoint', inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
+    return df
+
+
+def analyze_yaml(yaml_path, output_path):
+    """Loads a yaml file and analyzes each file in the dictionary that has a
+    crop selected."""
+
+    # Load file
+    with open(yaml_path, 'r', encoding='utf-8') as fi:
+        file_dict = yaml.load(fi.read())
+
+    all_dfs = []
+    for file in file_dict.keys():
+        fluo_file = file_dict[file]['yfp']
+        region = file_dict[file]['crop']
+
+        print('Analyzing file: %s' % file)
+
+        this_file_res = analyze_file(file, fluo_file, region)
+
+        print('Saving file: %s' % file)
+
+        all_dfs.append(this_file_res)
+
+    df = pd.concat(all_dfs, ignore_index=True)
+    df.to_pickle(output_path)
+
+
+def analyze_timeseries(stacks, region):
+    """Analyzes a complete stack using region as crop coordinates and returns a
+    list of snakes for each border found."""
+    e_snks = []
+    i_snks = []
+    l_snks = []
+    for ndx in range(stacks.shape[1]):
+        print(ndx)
+        tran0 = stacks[0, ndx, :, :]
+        fluo0 = stacks[1, ndx, :, :]
+
+        result = analyze_timepoint(tran0, fluo0, region)
+
+        e_snks.append(result['e_snk'])
+        i_snks.append(result['i_snk'])
+        l_snks.append(result['l_snk'])
+
+    return e_snks, i_snks, l_snks
         
             
 def test_circle():
