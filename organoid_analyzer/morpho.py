@@ -1,10 +1,6 @@
 import os
 import itertools as itools
 
-import multiprocessing
-import yaml
-
-import pandas as pd
 from scipy import signal
 import numpy as np
 from skimage import segmentation, draw, filters, measure, io as skio, \
