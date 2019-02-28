@@ -8,7 +8,7 @@ from organoid_analyzer import orgapath as op
 from organoid_analyzer import morpho
 
 
-class Analyzer(object):
+class Organyzer(object):
 
     def __init__(self, filepath_or_folder, output_name):
         filepath = pathlib.Path(filepath_or_folder)

@@ -475,6 +475,7 @@ def create_bulge_masks(internals, externals, labeled_bulge):
 
 
 def get_description(mask, descriptors=None):
+    """Returns a dictionary with the chosen descriptors of the mask."""
     if descriptors is None:
         descriptors = ['area', 'centroid', 'convex_area', 'eccentricity',
                        'equivalent_diameter', 'euler_number', 'extent',
