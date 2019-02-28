@@ -242,5 +242,6 @@ def add_crop_to_yaml(filename, crop_filename=None):
     except KeyboardInterrupt:
         pass
 
-    with open(filename[:filename.rfind('.')] + '_crop.yaml', 'w', encoding='utf-8') as fo:
+    with open(filename[:filename.rfind('.')] + '_crop.yaml',
+              'w', encoding='utf-8') as fo:
         fo.write(yaml.dump(dout))
