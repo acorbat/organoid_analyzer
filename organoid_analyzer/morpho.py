@@ -479,10 +479,11 @@ def create_bulge_masks(internals, externals, labeled_bulge):
 
 
 def get_description(mask, descriptors=None):
-    descriptors = ['area', 'centroid', 'convex_area', 'eccentricity',
-                   'equivalent_diameter', 'euler_number', 'extent',
-                   'major_axis_length', 'minor_axis_length', 'moments_hu',
-                   'perimeter', 'solidity', ]
+    if descriptors is None:
+        descriptors = ['area', 'centroid', 'convex_area', 'eccentricity',
+                       'equivalent_diameter', 'euler_number', 'extent',
+                       'major_axis_length', 'minor_axis_length', 'moments_hu',
+                       'perimeter', 'solidity', ]
     description = {}
     for region in measure.regionprops(mask):
         for prop in descriptors:
@@ -506,44 +507,7 @@ def protocol(stack, region):
     return e_snks, i_snks
 
 
-def timepoint_to_df(params):
-    """Analyzes a single timepoint and generates a small pandas DataFrame.
-
-    Parameters
-    ----------
-    params : list
-        ndx, tran, fluo, region, filepath, fluo_filepath
-
-    Returns
-    -------
-    df : pandas DataFrame
-        Small DataFrame with the results of a single timepoint analysis."""
-
-    ndx, tran, fluo, region, filepath, fluo_filepath = params
-
-    print('analyzing timepoint %s from file %s' % (ndx, filepath))
-
-    to_save = analyze_timepoint(tran, fluo, region)
-    mask = snake_to_mask(to_save['external_snakes'][0], tran.shape)
-    description = get_description(mask)
-
-    df = pd.DataFrame(to_save)
-
-    for prop in description.keys():
-        if isinstance(description[prop], (tuple, list, np.ndarray)):
-            df[prop] = [description[prop]]
-        else:
-            df[prop] = description[prop]
-
-    df['tran_path'] = filepath
-    df['fluo_path'] = fluo_filepath
-    df['crop'] = [region]
-    df['timepoint'] = ndx
-
-    return df
-
-
-def analyze_timepoint(tran, fluo, region):
+def segment_timepoint(tran, fluo, region):
     """Analyzes a single pair of transmission and fluorescence timepoint, with
     the specified region of the desired organoid and returns a dictionary with
     the results.
@@ -579,75 +543,6 @@ def analyze_timepoint(tran, fluo, region):
                'lumen_snakes': [l_snk]}
 
     return results
-
-
-def my_iterator(tran_stack, fluo_stack, region, filepath, fluo_filepath):
-    """Generates an iterator over the stack of images to use for
-    multiprocessing."""
-    for ndx, (tran0, fluo0) in enumerate(zip(tran_stack, fluo_stack)):
-        yield ndx, tran0, fluo0, region, filepath, fluo_filepath
-
-
-def analyze_file(filepath, fluo_filepath, region, workers=5):
-    """Multiprocesses the analysis over a complete stack.
-
-    Parameters
-    ----------
-    filepath : str
-        path to the transmission stack
-    fluo_filepath : str
-        path to the fluorescence stack
-    region : list, tuple
-        coordinates of the cropped region
-    workers : int (optional)
-        amount of threads to be used for analysis
-
-    Returns
-    -------
-    df : pandas DataFrame
-        DataFrame containing all the results from the analysis"""
-
-    tran_stack = skio.imread(filepath)
-    fluo_stack = skio.imread(fluo_filepath)
-
-    with multiprocessing.Pool(workers) as p:
-        file_results = []
-        for this_df in p.imap_unordered(timepoint_to_df,
-                                        my_iterator(tran_stack, fluo_stack,
-                                                    region,
-                                                    filepath, fluo_filepath)):
-            file_results.append(this_df)
-
-    df = pd.concat(file_results, ignore_index=True)
-    df.sort_values('timepoint', inplace=True)
-    df.reset_index(drop=True, inplace=True)
-
-    return df
-
-
-def analyze_yaml(yaml_path, output_path):
-    """Loads a yaml file and analyzes each file in the dictionary that has a
-    crop selected."""
-
-    # Load file
-    with open(yaml_path, 'r', encoding='utf-8') as fi:
-        file_dict = yaml.load(fi.read())
-
-    all_dfs = []
-    for file in file_dict.keys():
-        fluo_file = file_dict[file]['yfp']
-        region = file_dict[file]['crop']
-
-        print('Analyzing file: %s' % file)
-
-        this_file_res = analyze_file(file, fluo_file, region)
-
-        print('Saving file: %s' % file)
-
-        all_dfs.append(this_file_res)
-
-    df = pd.concat(all_dfs, ignore_index=True)
-    df.to_pickle(output_path)
 
 
 def analyze_timeseries(stacks, region):
