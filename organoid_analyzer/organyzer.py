@@ -155,7 +155,7 @@ class Organyzer(object):
                      filepath, fluo_filepath, region):
         """Generates an iterator over the stack of images to use for
         multiprocessing."""
-        for ndx, (tran0, fluo0) in enumerate(zip(tran_stack[:2], fluo_stack)):
+        for ndx, (tran0, fluo0) in enumerate(zip(tran_stack, fluo_stack)):
             yield ndx, tran0, fluo0, filepath, fluo_filepath, region
 
     def timepoint_to_df(self, params):

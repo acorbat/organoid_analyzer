@@ -5,12 +5,12 @@ from scipy import signal
 import numpy as np
 from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
-from skimage.filters import sobel, threshold_otsu
+#from skimage.filters import sobel, threshold_otsu
 
 active_contour = segmentation.active_contour
 
 
-def mask_organoids(img, min_organoid_size=1000):
+def mask_organoids(img, region, min_organoid_size=1000):
     """Processes transmission image in order to find organoids. It performs:
     1. Rescaling of intensity to float.
     2. inversion of intensities.
@@ -35,13 +35,36 @@ def mask_organoids(img, min_organoid_size=1000):
     processed_image = util.img_as_float(img)
     processed_image = util.invert(processed_image)
     processed_image = exposure.adjust_gamma(processed_image, 5)
-    processed_image = sobel(processed_image)
-    threshold = threshold_otsu(processed_image)
+    processed_image = filters.sobel(processed_image)
+    threshold = filters.threshold_otsu(processed_image)
     mask = processed_image > threshold
+
+    # We discard all foreground corresponding to other regions. At this point it
+    # might allow us to discard objects at border of region.
+    (xmin, xmax, ymin, ymax) = region
+    mask[:int(ymin), :] = 0
+    mask[int(ymax):, :] = 0
+    mask[:, :int(xmin)] = 0
+    mask[:, int(xmax):] = 0
+
     mask = morphology.remove_small_holes(mask, area_threshold=min_organoid_size)
     mask = morphology.remove_small_objects(mask, min_size=min_organoid_size)
 
-    return mask
+    return mask, processed_image
+
+
+def get_coarse_snake_from_mask(mask):
+    """Tries to close large unclosed organoid masks and create an initial snake
+    from them."""
+
+    new_mask = morphology.binary_closing(mask, selem=morphology.disk(4))
+    new_mask = morphology.remove_small_holes(new_mask, area_threshold=1000000)
+
+    init_snake = mask_to_snake(new_mask)
+    init_snake = sort_snake(init_snake)
+    init_snake = np.asarray([init_snake[:, 1], init_snake[:, 0]]).T
+
+    return init_snake
 
 
 def snake_from_extent(extents, shape):
@@ -73,9 +96,9 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
     # w_line=0, w_edge=1, gamma=0.01,
     # bc='periodic', max_px_move=1.0,
     # max_iterations=2500, convergence=0.1
-    # snake = active_contour(im,
-    #                        snake, alpha=0.015, beta=10, gamma=gamma*100,
-    #                        w_line=mult*0.1, w_edge=1)
+    snake = active_contour(im,
+                           snake, alpha=0.015, beta=10, gamma=gamma*100,
+                           w_line=mult*0.1, w_edge=5)
     return snake
 
 
@@ -518,7 +541,7 @@ def segment_timepoint(tran, fluo, region):
     region : list, tuple
         coordinates of the crop region
 
-    Returns :
+    Returns
     -------
     results : dict
         Returns a dictionary with the results of the analysis.
@@ -531,10 +554,11 @@ def segment_timepoint(tran, fluo, region):
                 List of coordinates of the lumen contour obtained from
                 fluorescence channel"""
 
-    mask = mask_organoids(tran)
-    e_snk = find_external(mask, region)
+    mask, processed_image = mask_organoids(tran, region)
+    init_snake = get_coarse_snake_from_mask(mask)
+    e_snk = find_external(processed_image, init_snake, mult=-2.5)
     i_snk, _ = find_internal(tran, e_snk)
-    l_snk = find_external(fluo, region)
+    l_snk = find_external(fluo, init_snake)
 
     results = {'external_snakes': [e_snk], 'internal_snakes': [i_snk],
                'lumen_snakes': [l_snk]}
@@ -553,7 +577,7 @@ def analyze_timeseries(stacks, region):
         tran0 = stacks[0, ndx, :, :]
         fluo0 = stacks[1, ndx, :, :]
 
-        result = analyze_timepoint(tran0, fluo0, region)
+        result = segment_timepoint(tran0, fluo0, region)
 
         e_snks.append(result['e_snk'])
         i_snks.append(result['i_snk'])
