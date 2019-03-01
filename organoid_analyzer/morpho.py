@@ -5,7 +5,6 @@ from scipy import signal
 import numpy as np
 from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
-#from skimage.filters import sobel, threshold_otsu
 
 active_contour = segmentation.active_contour
 
@@ -36,7 +35,7 @@ def mask_organoids(img, region, min_organoid_size=1000):
     processed_image = util.invert(processed_image)
     processed_image = exposure.adjust_gamma(processed_image, 5)
     processed_image = filters.sobel(processed_image)
-    threshold = filters.threshold_otsu(processed_image)
+    threshold = filters.threshold_otsu(processed_image)/2
     mask = processed_image > threshold
 
     # We discard all foreground corresponding to other regions. At this point it
@@ -53,12 +52,22 @@ def mask_organoids(img, region, min_organoid_size=1000):
     return mask, processed_image
 
 
-def get_coarse_snake_from_mask(mask):
+def get_filled_mask(mask):
+    """Fills the interior of a masked object."""
+    new_mask = morphology.binary_closing(mask, selem=morphology.disk(10))
+    for region in measure.regionprops(new_mask.astype(int)):
+        filled_area = region['filled_image']
+        bbox = region['bbox']
+        new_mask = np.zeros_like(new_mask)
+        new_mask[bbox[0]:bbox[2], bbox[1]:bbox[3]] = filled_area
+    return new_mask
+
+
+def get_filled_snake_from_mask(mask):
     """Tries to close large unclosed organoid masks and create an initial snake
     from them."""
 
-    new_mask = morphology.binary_closing(mask, selem=morphology.disk(4))
-    new_mask = morphology.remove_small_holes(new_mask, area_threshold=1000000)
+    new_mask = get_filled_mask(mask)
 
     init_snake = mask_to_snake(new_mask)
     init_snake = sort_snake(init_snake)
@@ -86,8 +95,8 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
     
     im = filters.gaussian(img, 5)
     snake = active_contour(im,
-                           init_snake, alpha=0.015, beta=10, gamma=gamma,
-                           w_line=mult*0.1, w_edge=1)       
+                           init_snake, alpha=0.015, beta=0.1, gamma=gamma*10,
+                           w_line=mult*0.1, w_edge=10)
             
     # im = filters.gaussian(img, 2)
 
@@ -97,7 +106,7 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
     # bc='periodic', max_px_move=1.0,
     # max_iterations=2500, convergence=0.1
     snake = active_contour(im,
-                           snake, alpha=0.015, beta=10, gamma=gamma*100,
+                           snake, alpha=0.015, beta=0.01, gamma=gamma*100,
                            w_line=mult*0.1, w_edge=5)
     return snake
 
@@ -555,13 +564,13 @@ def segment_timepoint(tran, fluo, region):
                 fluorescence channel"""
 
     mask, processed_image = mask_organoids(tran, region)
-    init_snake = get_coarse_snake_from_mask(mask)
-    e_snk = find_external(processed_image, init_snake, mult=-2.5)
-    i_snk, _ = find_internal(tran, e_snk)
-    l_snk = find_external(fluo, init_snake)
+    init_snake = get_filled_snake_from_mask(mask)
+    e_snk = find_external(tran, init_snake, mult=-1)
+    #i_snk, _ = find_internal(tran, e_snk)
+    #l_snk = find_external(fluo, init_snake, mult=1)
 
-    results = {'external_snakes': [e_snk], 'internal_snakes': [i_snk],
-               'lumen_snakes': [l_snk]}
+    results = {'external_snakes': [e_snk]}#, 'internal_snakes': [i_snk],
+               #'lumen_snakes': [l_snk]}
 
     return results
 
