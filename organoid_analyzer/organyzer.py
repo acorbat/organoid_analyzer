@@ -125,8 +125,8 @@ class Organyzer(object):
 
             all_dfs.append(this_file_res)
 
-        self.df = pd.concat(all_dfs, ignore_index=True)
-        self.save_results()
+            self.df = pd.concat(all_dfs, ignore_index=True)
+            self.save_results()
 
     def _analyze_file(self, filepath, fluo_filepath, region):
         """Multiprocesses the analysis over a complete stack.
@@ -170,7 +170,7 @@ class Organyzer(object):
                      filepath, fluo_filepath, region):
         """Generates an iterator over the stack of images to use for
         multiprocessing."""
-        for ndx, (tran0, fluo0) in enumerate(zip(tran_stack[:2], fluo_stack)):
+        for ndx, (tran0, fluo0) in enumerate(zip(tran_stack, fluo_stack)):
             yield ndx, tran0, fluo0, filepath, fluo_filepath, region
 
     def timepoint_to_df(self, params):
