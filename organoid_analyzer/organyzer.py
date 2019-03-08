@@ -10,22 +10,48 @@ from organoid_analyzer import morpho
 
 class Organyzer(object):
 
-    def __init__(self, filepath_or_folder, output_name):
+    def __init__(self, filepath_or_folder, output_name, overwrite=False):
         filepath = pathlib.Path(filepath_or_folder)
         self.output_name = output_name
-        self.output_path = filepath.parent
-        self.output_path = self.output_path.joinpath(self.output_name
-                                                     + '.pandas')
+        self.overwrite = overwrite  # True if overwriting pandas file is ok
+
         # set filepaths and load dictionary
         self.filepath_yaml = None
         self.filepath_yaml_crop = None
         self.file_dict = None
         self.set_filepaths_and_file_dicts(filepath)
+        self.set_output_path_and_load_df(filepath)
 
         # set parameters for analysis and saving files
-        self.overwrite = False  # True if overwriting pandas file is ok
         self.workers = 5  # How many threads can be used
-        self.df = None
+
+    def set_output_path_and_load_df(self, filepath):
+        """Looks for existing saved pandas files, loads them if existent and
+        sets a savepath so as to not overwrite the previous file, unless
+        overwrite attribute is True."""
+        self.output_path = filepath.parent
+        self.output_path = self.output_path.joinpath(self.output_name
+                                                     + '.pandas')
+        if self.output_path.exists():
+            self.df = self.load_pandas()
+
+            if self.overwrite:
+                return
+
+            if not self.output_path.stem.split('_')[-1].isdigit():
+                self.output_path = self.output_path.with_name(
+                    self.output_name + '_0.pandas')
+
+            file_num = self.output_path.name.split('_')[-1]
+            while self.output_path.exists():
+                self.df = self.load_pandas()
+                self.output_path = self.output_path.with_name(
+                    self.output_name + '_' + str(file_num) + '.pandas')
+                file_num += 1
+
+    def load_pandas(self):
+        """Load saved pandas file"""
+        return pd.read_pickle(str(self.output_path))
 
     def set_filepaths_and_file_dicts(self, filepath):
         """Checks whether the filepath is a folder, base yaml or cropped yaml.
@@ -70,19 +96,8 @@ class Organyzer(object):
         return file_dict
 
     def save_results(self):
-        """Save DataFrame containing results. Checks before overwriting."""
-        if self.overwrite:
-            save_path = str(self.output_path)
-        else:
-            save_path = self.output_path
-            file_num = 0
-            while save_path.exists():
-                save_path = save_path.with_name(save_path.stem + '_' +
-                                                str(file_num) + '.pandas')
-                file_num += 1
-            save_path = str(save_path)
-
-        self.df.to_pickle(save_path)
+        """Save DataFrame containing results."""
+        self.df.to_pickle(str(self.output_path))
 
     def crop(self):
         """Asks for the cropping of the listed files, saves the crop yaml and
