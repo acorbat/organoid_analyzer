@@ -49,6 +49,9 @@ class Organyzer(object):
                     self.output_name + '_' + str(file_num) + '.pandas')
                 file_num += 1
 
+        else:
+            self.df = None
+
     def load_pandas(self):
         """Load saved pandas file"""
         return pd.read_pickle(str(self.output_path))
@@ -111,21 +114,27 @@ class Organyzer(object):
 
     def analyze(self):
         """Analyzes every stack included in the file dictionary."""
-        all_dfs = []
+
         for file in self.file_dict.keys():
-            # TODO: Check already analyzed files
             fluo_file = self.file_dict[file]['yfp']
             region = self.file_dict[file]['crop']
 
             print('Analyzing file: %s' % file)
 
+            if self.df is not None and file in self.df.tran_path.values:
+                print('%s has already been analyzed' % file)
+                continue
+
             this_file_res = self._analyze_file(file, fluo_file, region)
 
             print('Saving file: %s' % file)
 
-            all_dfs.append(this_file_res)
+            this_df = pd.DataFrame(this_file_res)
 
-            self.df = pd.concat(all_dfs, ignore_index=True)
+            if self.df is not None:
+                self.df = self.df.append(this_df,  ignore_index=True)
+            else:
+                self.df = this_df.copy()
             self.save_results()
 
     def _analyze_file(self, filepath, fluo_filepath, region):
