@@ -156,10 +156,11 @@ def find_internal(img, external):
 
     for ndx, (x, y, r) in enumerate(zip(cx, cy, radii)):
         if DEBUG:
-            snks.append(sort_snake(np.asarray(draw.circle_perimeter(x, y, r)).T))
+            snks.append(sort_snake(np.asarray(draw.circle_perimeter(
+                x, y, r, shape=img.shape)).T))
         
         # Swapped X and Y
-        [rr, cc] = draw.circle_perimeter(y, x, r)
+        [rr, cc] = draw.circle_perimeter(y, x, r, shape=img.shape)
         valid.append(np.all(msk[rr, cc] == 1))
         
         if DEBUG:
