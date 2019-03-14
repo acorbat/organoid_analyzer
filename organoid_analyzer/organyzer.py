@@ -42,7 +42,7 @@ class Organyzer(object):
                 self.output_path = self.output_path.with_name(
                     self.output_name + '_0.pandas')
 
-            file_num = self.output_path.name.split('_')[-1]
+            file_num = int(self.output_path.stem.split('_')[-1])
             while self.output_path.exists():
                 self.df = self.load_pandas()
                 self.output_path = self.output_path.with_name(
