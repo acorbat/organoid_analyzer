@@ -20,16 +20,16 @@ class Organyzer(object):
         self.filepath_yaml_crop = None
         self.file_dict = None
         self.set_filepaths_and_file_dicts(filepath)
-        self.set_output_path_and_load_df(filepath)
+        self.set_output_path_and_load_df()
 
         # set parameters for analysis and saving files
         self.workers = 5  # How many threads can be used
 
-    def set_output_path_and_load_df(self, filepath):
+    def set_output_path_and_load_df(self):
         """Looks for existing saved pandas files, loads them if existent and
         sets a savepath so as to not overwrite the previous file, unless
         overwrite attribute is True."""
-        self.output_path = filepath.parent
+        self.output_path = self.filepath_yaml.parent
         self.output_path = self.output_path.joinpath(self.output_name
                                                      + '.pandas')
         if self.output_path.exists():
@@ -42,7 +42,7 @@ class Organyzer(object):
                 self.output_path = self.output_path.with_name(
                     self.output_name + '_0.pandas')
 
-            file_num = self.output_path.name.split('_')[-1]
+            file_num = int(self.output_path.name.split('_')[-1].split('.')[0])
             while self.output_path.exists():
                 self.df = self.load_pandas()
                 self.output_path = self.output_path.with_name(
@@ -68,7 +68,19 @@ class Organyzer(object):
                   + str(filepath))
 
             self.filepath_yaml = filepath.joinpath(self.output_name + '.yaml')
-            op.create_base_yaml(str(filepath), str(self.filepath_yaml))
+            if self.filepath_yaml.exists():
+                self.file_dict = self.load_yaml(self.filepath_yaml)
+
+                op.append_to_yaml(str(filepath), self.filepath_yaml,
+                                  self.file_dict)
+
+            else:
+                op.create_base_yaml(str(filepath), str(self.filepath_yaml))
+
+            self.filepath_yaml_crop = \
+                self.filepath_yaml.with_name(self.filepath_yaml.stem +
+                                             '_crop.yaml')
+
 
         elif 'crop' in filepath.stem:
             print('I am going to analyze already cropped stacks from this '
@@ -86,6 +98,9 @@ class Organyzer(object):
                   'file: ' + str(filepath))
 
             self.filepath_yaml = pathlib.Path(filepath)
+            self.filepath_yaml_crop = \
+                self.filepath_yaml.with_name(self.filepath_yaml.stem +
+                                             '_crop.yaml')
 
         if self.filepath_yaml_crop and self.filepath_yaml_crop.exists():
             self.file_dict = self.load_yaml(self.filepath_yaml_crop)
@@ -105,11 +120,12 @@ class Organyzer(object):
     def crop(self):
         """Asks for the cropping of the listed files, saves the crop yaml and
         loads the dictionary with the crops."""
-        op.add_crop_to_yaml(str(self.filepath_yaml),
-                            crop_filename=self.filepath_yaml_crop)
-        self.filepath_yaml_crop = \
-            self.filepath_yaml.with_name(self.filepath_yaml.stem +
-                                         '_crop.yaml')
+        if self.filepath_yaml_crop.exists():
+            op.add_crop_to_yaml(str(self.filepath_yaml),
+                                crop_filename=self.filepath_yaml_crop)
+        else:
+            op.add_crop_to_yaml(str(self.filepath_yaml))
+
         self.file_dict = self.load_yaml(self.filepath_yaml_crop)
 
     def analyze(self):
