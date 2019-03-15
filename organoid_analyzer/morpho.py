@@ -570,7 +570,7 @@ def segment_timepoint(tran, fluo, region):
     #i_snk, _ = find_internal(tran, e_snk)
     #l_snk = find_external(fluo, init_snake, mult=1)
 
-    results = {'initial_snake': init_snake, 'external_snakes': [e_snk]}
+    results = {'initial_snake': [init_snake], 'external_snakes': [e_snk]}
     #, 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
 
     return results
