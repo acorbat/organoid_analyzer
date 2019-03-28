@@ -218,6 +218,8 @@ class Organyzer(object):
         to_save = morpho.segment_timepoint(tran, fluo, region)
         mask = morpho.snake_to_mask(to_save['external_snakes'][0], tran.shape)
         description = morpho.get_description(mask)
+        description.update(morpho.get_texture_description(
+            tran, to_save['external_snake']))
 
         df = pd.DataFrame(to_save)
 
