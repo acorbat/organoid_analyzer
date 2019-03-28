@@ -569,6 +569,10 @@ def segment_timepoint(tran, fluo, region):
     e_snk = find_external(tran, init_snake, mult=-1)
     #i_snk, _ = find_internal(tran, e_snk)
     #l_snk = find_external(fluo, init_snake, mult=1)
+    mask = snake_to_mask(e_snk, tran.shape)
+    labeled = morphology.label(mask)
+    if (labeled == 0).all():
+        e_snk = find_external(tran, init_snake, mult=-1, gamma=0.1)
 
     results = {'initial_snake': [init_snake], 'external_snakes': [e_snk]}
     #, 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
