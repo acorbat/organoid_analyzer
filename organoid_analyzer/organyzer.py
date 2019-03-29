@@ -235,3 +235,37 @@ class Organyzer(object):
         df['timepoint'] = ndx
 
         return df
+
+    def update(self):
+        this_file_res = []
+
+        for file in self.file_dict.keys():
+            print('Analyzing file: %s' % file)
+
+            sel_df = self.df.query('tran_path == "%s"' % file)
+            tran_stack = morpho.skio.imread(file)
+            index = sel_df.timepoint.values
+            snakes = sel_df.external_snakes.values
+
+            for (ndx, tran0, snake) in zip(index, tran_stack, snakes):
+
+                df = pd.DataFrame({'tran_path': file, 'timepoint': [ndx]})
+                description = morpho.get_texture_description(tran0, snake)
+
+                for prop in description.keys():
+                    if isinstance(description[prop], (tuple, list, np.ndarray)):
+                        df[prop] = [description[prop]]
+                    else:
+                        df[prop] = description[prop]
+
+                this_file_res.append(df)
+
+            print('Merging file: %s' % file)
+
+        all_df = pd.concat(this_file_res, ignore_index=True)
+
+        if self.df is not None:
+            self.df = self.df.merge(all_df,  on=['tran_path', 'timepoint'])
+        else:
+            self.df = all_df.copy()
+        self.save_results()
