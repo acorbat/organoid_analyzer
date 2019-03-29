@@ -5,6 +5,7 @@ from scipy import signal
 import numpy as np
 from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
+from mahotas.features import haralick
 
 active_contour = segmentation.active_contour
 
@@ -74,6 +75,15 @@ def get_filled_snake_from_mask(mask):
     init_snake = np.asarray([init_snake[:, 1], init_snake[:, 0]]).T
 
     return init_snake
+
+
+def get_masked_img(img, snake):
+    """Returns the image where every pixel outside the snake is zero."""
+    masked_img = np.zeros_like(img)
+    mask = snake_to_mask(snake, img.shape)
+    masked_img[np.nonzero(mask)] = img[np.nonzero(mask)]
+
+    return masked_img
 
 
 def snake_from_extent(extents, shape):
@@ -507,6 +517,21 @@ def create_bulge_masks(internals, externals, labeled_bulge):
     return out
 
 
+def get_hu_moments(image):
+    """Returns the Hu Moments of an image."""
+    m = measure.moments(image, order=3).T
+    cr = m[0, 1] / m[0, 0]
+    cc = m[1, 0] / m[0, 0]
+
+    mu = measure.moments_central(image, center=(cr, cc), order=3).T
+
+    nu = measure.moments_normalized(mu, order=3)
+
+    hu = measure.moments_hu(nu)
+
+    return hu
+
+
 def get_description(mask, descriptors=None):
     """Returns a dictionary with the chosen descriptors of the mask."""
     if descriptors is None:
@@ -519,6 +544,23 @@ def get_description(mask, descriptors=None):
         for prop in descriptors:
             description[prop] = region[prop]
         return description
+
+
+def get_texture_description(img, snake):
+
+    description = {}
+    masked_img = get_masked_img(img, snake)
+    weighted_hu_moments = get_hu_moments(masked_img)
+    for j in range(7):
+        description['intensity_hu_moment_' + str(j + 1)] = weighted_hu_moments[
+            j]
+
+    haral = haralick(masked_img, ignore_zeros=True, return_mean=True)
+
+    for j in range(13):
+        description['haralick_' + str(j + 1)] = haral[j]
+
+    return description
 
 
 def protocol(stack, region):
