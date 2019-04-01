@@ -1,16 +1,23 @@
 import pathlib
 import numpy as np
+import pandas as pd
+
+import matplotlib.pyplot as plt
+from skimage import draw
 
 from img_manager import tifffile as tif
 
 class ImageOrganyzer(object):
 
     def __init__(self, folder):
+        self.overwrite = False
         self.path = pathlib.Path(folder)
         self.folder_name = self.path.stem
         self.save_path = self.path.parent.joinpath(self.folder_name +
                                                    '_concatenated')
         self.inner_folders = self.get_folder_list()
+
+        self.regions_paths = self.path.joinpath('regions')
 
     def get_folder_list(self):
         """Returns an ordered list of all the folders inside the main experiment
@@ -80,12 +87,16 @@ class ImageOrganyzer(object):
             if this_file.suffix.lower() != '.tif':
                 continue
 
+            this_file_name = this_file.name
+            save_path = self.save_path.joinpath(this_file_name)
+            if save_path.exists():
+                print('File already concatenated')
+
             stacks = []
             metadatas = []
             times = []
             zetas = []
 
-            this_file_name = this_file.name
             for folder in self.inner_folders:
                 this_other_file = folder.joinpath(this_file_name)
                 if not this_other_file.exists():
@@ -111,6 +122,53 @@ class ImageOrganyzer(object):
             metadata = metadatas[-1]
             metadata['Time'] = times
 
-            save_path = self.save_path.joinpath(this_file_name)
             self.save_img(save_path, stack, axes='TZYX', create_dir=True,
             metadata=metadata)
+
+    def get_region(self, filepath):
+        with open(str(filepath), 'rb') as file:
+            for row in file:
+                this_r = row.decode("utf-8")
+                if 'Region Points' in this_r:
+                    region_text = this_r.split('=')[-1]
+                    region_text = region_text.split(';')[:-1]
+                    bbox = [this.split(',') for this in region_text]
+                    new_bbox = [0, ] * 4
+                    for n, dim in enumerate(bbox):
+                        new_bbox[n:n+3:2] = [int(elem) for elem in dim[::-1]]
+                    return new_bbox
+
+    def get_photoactivation_mask(self, filepath, img):
+        bbox = self.get_region(str(filepath))
+        coords = draw.rectangle(bbox[0:3:2], end=bbox[1:4:2], shape=img.shape)
+        mask = np.zeros(img.shape)
+        mask[coords] = 1
+        return mask
+
+    def plot_and_save_photoactivation(self):
+        save_path = self.path.parent.joinpath(self.folder_name + '_regions')
+        save_path.mkdir(exist_ok=True)
+        this_dict = {'filename': [], 'region': []}
+        for file in self.regions_paths.iterdir():
+            if file.suffix != '.rgn':
+                continue
+
+            img_file = tif.TiffFile(str(file.with_suffix('.tif')))
+            img = img_file.asarray()
+
+            region = self.get_region(str(file))
+            this_dict['filename'].append(file.stem)
+            this_dict['region'].append(region)
+            pa_mask = self.get_photoactivation_mask(str(file), img)
+
+            plt.imshow(img, cmap='Greys')
+            plt.contour(pa_mask, color='r')
+            plt.axis('off')
+
+            this_img_save_path = save_path.joinpath(file.name)
+            this_img_save_path = this_img_save_path.with_suffix('.png')
+            plt.savefig(str(this_img_save_path))
+            plt.close()
+
+        df_regions = pd.DataFrame(this_dict)
+        df_regions.to_csv(str(save_path.joinpath('regions.csv')))
