@@ -15,7 +15,8 @@ class ImageOrganyzer(object):
     def get_folder_list(self):
         """Returns an ordered list of all the folders inside the main experiment
          folder"""
-        folders = [folder for folder in self.path.iterdir()]
+        folders = [folder for folder in self.path.iterdir()
+                   if self.folder_name in folder.stem]
         folders = {int(this.stem.split('_')[-1]): this for this in folders}
         folder_numbers = list(folders.keys())
         folder_numbers = sorted(folder_numbers)
@@ -76,7 +77,7 @@ class ImageOrganyzer(object):
         first_folder = self.path.joinpath(self.inner_folders[0])
         for this_file in first_folder.iterdir():
             print('Concatenating %s' % str(this_file))
-            if this_file.suffix.lower() is not '.tif':
+            if this_file.suffix.lower() != '.tif':
                 continue
 
             stacks = []
@@ -86,8 +87,8 @@ class ImageOrganyzer(object):
 
             this_file_name = this_file.name
             for folder in self.inner_folders:
-                folder.joinpath(this_file_name)
-                if not this_file_name.exists():
+                this_other_file = folder.joinpath(this_file_name)
+                if not this_other_file.exists():
                     continue
 
                 metadata = self.get_metadata(str(this_file))
@@ -113,5 +114,3 @@ class ImageOrganyzer(object):
             save_path = self.save_path.joinpath(this_file_name)
             self.save_img(save_path, stack, axes='TZYX', create_dir=True,
             metadata=metadata)
-
-            break
