@@ -162,7 +162,7 @@ class ImageOrganyzer(object):
             pa_mask = self.get_photoactivation_mask(str(file), img)
 
             plt.imshow(img, cmap='Greys')
-            plt.contour(pa_mask, color='r')
+            plt.contour(pa_mask, colors='r')
             plt.axis('off')
 
             this_img_save_path = save_path.joinpath(file.name)
