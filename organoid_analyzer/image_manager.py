@@ -3,9 +3,10 @@ import numpy as np
 import pandas as pd
 
 import matplotlib.pyplot as plt
-from skimage import draw
+from skimage import draw, transform, util, filters
 
 from img_manager import tifffile as tif
+
 
 class ImageOrganyzer(object):
 
@@ -172,3 +173,53 @@ class ImageOrganyzer(object):
 
         df_regions = pd.DataFrame(this_dict)
         df_regions.to_csv(str(save_path.joinpath('regions.csv')))
+
+
+class Stack(object):
+
+    def __init__(self, path_to_tran):
+        self.paths = self.get_paths(path_to_tran)
+        self.traslation = {'tran': (0, 0),
+                           'fluo': (-3, -14),
+                           'auto': (-3, -12)}
+
+    def get_paths(self, path, channels=None):
+        """Generates a dictionary with the suppossed paths to the other channels
+        and keys are channel names."""
+        path = pathlib.Path(path)
+        if channels is None:
+            channels = {'tran': 'TRAN',
+                        'fluo': 'YFP',
+                        'auto': 'RFP'}
+
+        path_dict = {key: path.with_name(path.name.replace('TRAN', val))
+                     for key, val in channels.items()}
+
+        return path_dict
+
+    def shift_image(self, img, shift_xy):
+        """Shifts image according to shift_xy. Border values are repeated."""
+        tform = transform.EuclideanTransform(translation=shift_xy, mode='edge')
+        img = util.img_as_float(img)
+        shifted_img = transform.warp(img, tform)
+
+        return shifted_img
+
+    def threshold_img(self, img, mult=.95):
+        """Performs Otsu thresholding and returns an image with the foreground
+        replaced by nans. mult parameter is a multiplication for otsu's
+        threshold."""
+        threshold = filters.threshold_otsu(img)
+        new_img = np.zeros_like(img)
+        new_img[img < mult * threshold] = img[img < mult * threshold]
+
+        return new_img
+
+    def correct_bkg(self, img):
+        """Replaces foreground by nans, and calculates the background as the
+        median of the rest. This is later subtratced from the image which is
+        clipped as well between 0 and infinite."""
+        bkg_img = self.threshold_img(img, mult=1)
+        bkg = np.median(bkg_img[np.nonzero(bkg_img)])
+        new_img = np.clip(img - bkg, 0, np.inf)
+        return new_img
