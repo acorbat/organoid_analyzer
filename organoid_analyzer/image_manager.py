@@ -97,21 +97,22 @@ class ImageOrganyzer(object):
             times = []
             zetas = []
 
-            for folder in self.inner_folders:
-                this_other_file = folder.joinpath(this_file_name)
-                if not this_other_file.exists():
-                    continue
+            if len(self.inner_folders) > 1:
+                for folder in self.inner_folders[1:]:
+                    this_other_file = folder.joinpath(this_file_name)
+                    if not this_other_file.exists():
+                        continue
 
-                metadata = self.get_metadata(str(this_file))
-                metadatas.append(metadata)
-                this_img_file = tif.TiffFile(str(this_file))
+                    metadata = self.get_metadata(str(this_file))
+                    metadatas.append(metadata)
+                    this_img_file = tif.TiffFile(str(this_file))
 
-                times.append(int(metadata['Time']))
-                zetas.append(int(metadata['Z']))
-
-                stack = this_img_file.asarray()
-
-                stacks.append(stack)
+                    times.append(int(metadata['Time']))
+                    zetas.append(int(metadata['Z']))
+    
+                    stack = this_img_file.asarray()
+    
+                    stacks.append(stack)
 
             stack = np.concatenate(stacks)
             times = np.sum(times)
