@@ -29,6 +29,10 @@ class ImageOrganyzer(object):
         folder_numbers = sorted(folder_numbers)
         folders = [folders[ind] for ind in folder_numbers]
 
+        print("I will concatenate files found in the following folders:")
+        for folder in folders:
+            print(folder)
+
         return folders
 
     def get_metadata(self, filepath):
@@ -97,22 +101,25 @@ class ImageOrganyzer(object):
             times = []
             zetas = []
 
-            if len(self.inner_folders) > 1:
-                for folder in self.inner_folders[1:]:
-                    this_other_file = folder.joinpath(this_file_name)
-                    if not this_other_file.exists():
-                        continue
+            for folder in self.inner_folders:
+                this_other_file = folder.joinpath(this_file_name)
 
-                    metadata = self.get_metadata(str(this_file))
-                    metadatas.append(metadata)
-                    this_img_file = tif.TiffFile(str(this_file))
+                print('with ' + str(this_other_file))
 
-                    times.append(int(metadata['Time']))
-                    zetas.append(int(metadata['Z']))
-    
-                    stack = this_img_file.asarray()
-    
-                    stacks.append(stack)
+                if not this_other_file.exists():
+                    print("file not found")
+                    continue
+
+                metadata = self.get_metadata(str(this_other_file))
+                metadatas.append(metadata)
+                this_img_file = tif.TiffFile(str(this_other_file))
+
+                times.append(int(metadata['Time']))
+                zetas.append(int(metadata['Z']))
+
+                stack = this_img_file.asarray()
+
+                stacks.append(stack)
 
             stack = np.concatenate(stacks)
             times = np.sum(times)
