@@ -35,33 +35,6 @@ class ImageOrganyzer(object):
 
         return folders
 
-    def get_metadata(self, filepath):
-        with open(str(filepath), 'rb') as file:
-            metadata = []
-            append_it = False
-            for row in file:
-                try:
-                    this_r = row.decode("utf-8")
-
-                    if "Band" in this_r:
-                        append_it = True
-                    if append_it and "=" in this_r:
-                        metadata.append(this_r)
-                    if 'TimePos' in this_r:
-                        append_it = False
-
-                except:
-                    pass
-        meta_dict = {val.split('=')[0]: val.split('=')[1].replace('\n', '') for
-                     val in metadata}
-        for key, val in meta_dict.items():
-            try:
-                meta_dict[key] = float(val)
-            except:
-                pass
-
-        return meta_dict
-
     def save_img(self, save_path, stack, axes='YX', create_dir=False,
                  metadata=None):
         """Saves stack as 16-bit integer in tif format."""
@@ -110,7 +83,7 @@ class ImageOrganyzer(object):
                     print("file not found")
                     continue
 
-                metadata = self.get_metadata(str(this_other_file))
+                metadata = get_metadata(str(this_other_file))
                 metadatas.append(metadata)
                 this_img_file = tif.TiffFile(str(this_other_file))
 
@@ -180,3 +153,36 @@ class ImageOrganyzer(object):
 
         df_regions = pd.DataFrame(this_dict)
         df_regions.to_csv(str(save_path.joinpath('regions.csv')))
+
+
+def get_metadata(filepath):
+    img = tif.TiffFile(str(filepath))
+    if img.is_imagej:
+        meta_dict = img.imagej_metadata
+
+    else:
+        with open(str(filepath), 'rb') as file:
+            metadata = []
+            append_it = False
+            for row in file:
+                try:
+                    this_r = row.decode("utf-8")
+
+                    if "Band" in this_r:
+                        append_it = True
+                    if append_it and "=" in this_r:
+                        metadata.append(this_r)
+                    if 'TimePos' in this_r:
+                        append_it = False
+
+                except:
+                    pass
+        meta_dict = {val.split('=')[0]: val.split('=')[1].replace('\n', '') for
+                     val in metadata}
+        for key, val in meta_dict.items():
+            try:
+                meta_dict[key] = float(val)
+            except:
+                pass
+
+    return meta_dict
