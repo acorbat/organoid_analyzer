@@ -1,5 +1,6 @@
 import os
 import itertools as itools
+import pandas as pd
 
 from scipy import signal
 import numpy as np
@@ -36,11 +37,11 @@ def mask_organoids(img, region, min_organoid_size=1000):
     processed_image = util.invert(processed_image)
     processed_image = exposure.adjust_gamma(processed_image, 5)
     processed_image = filters.sobel(processed_image)
-    threshold = filters.threshold_otsu(processed_image)/2
+    threshold = filters.threshold_otsu(processed_image)
     mask = processed_image > threshold
 
-    # We discard all foreground corresponding to other regions. At this point it
-    # might allow us to discard objects at border of region.
+    # We discard all foreground corresponding to other regions. At this point
+    # it might allow us to discard objects at border of region.
     (xmin, xmax, ymin, ymax) = region
     mask[:int(ymin), :] = 0
     mask[int(ymax):, :] = 0
@@ -640,6 +641,45 @@ def analyze_timeseries(stacks, region):
         l_snks.append(result['l_snk'])
 
     return e_snks, i_snks, l_snks
+
+
+def timepoint_to_df(params):
+    """Analyzes a single timepoint and generates a small pandas DataFrame.
+
+    Parameters
+    ----------
+    params : list
+        ndx, tran, fluo, region, filepath, fluo_filepath
+
+    Returns
+    -------
+    df : pandas DataFrame
+        Small DataFrame with the results of a single timepoint analysis."""
+
+    ndx, tran, fluo, filepath, fluo_filepath, region = params
+
+    print('analyzing timepoint %s from file %s' % (ndx, filepath))
+
+    to_save = segment_timepoint(tran, fluo, region)
+    mask = snake_to_mask(to_save['external_snakes'][0], tran.shape)
+    description = get_description(mask)
+    description.update(get_texture_description(tran,
+                                               to_save['external_snakes'][0]))
+
+    df = pd.DataFrame(to_save)
+
+    for prop in description.keys():
+        if isinstance(description[prop], (tuple, list, np.ndarray)):
+            df[prop] = [description[prop]]
+        else:
+            df[prop] = description[prop]
+
+    df['tran_path'] = filepath
+    df['fluo_path'] = fluo_filepath
+    df['crop'] = [region]
+    df['timepoint'] = ndx
+
+    return df
         
             
 def test_circle():
