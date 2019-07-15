@@ -8,6 +8,8 @@ from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
 from mahotas.features import haralick
 
+from img_manager import tifffile as tif
+
 active_contour = segmentation.active_contour
 
 
@@ -656,9 +658,15 @@ def timepoint_to_df(params):
     df : pandas DataFrame
         Small DataFrame with the results of a single timepoint analysis."""
 
-    ndx, tran, fluo, filepath, fluo_filepath, region = params
+    ndx, key, filepath, fluo_filepath, region = params
 
     print('analyzing timepoint %s from file %s' % (ndx, filepath))
+
+    tran_img = tif.TiffFile(str(filepath))
+    fluo_img = tif.TiffFile(str(fluo_filepath))
+
+    tran = tran_img.asarray(key=key)
+    fluo = fluo_img.asarray(key=key)
 
     to_save = segment_timepoint(tran, fluo, region)
     mask = snake_to_mask(to_save['external_snakes'][0], tran.shape)

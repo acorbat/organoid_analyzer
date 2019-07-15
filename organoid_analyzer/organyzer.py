@@ -6,7 +6,7 @@ import numpy as np
 
 from organoid_analyzer import orgapath as op
 from organoid_analyzer import morpho
-
+from organoid_analyzer import image_manager as im
 
 class Organyzer(object):
 
@@ -169,17 +169,10 @@ class Organyzer(object):
             df : pandas DataFrame
                 DataFrame containing all the results from the analysis"""
 
-        tran_stack = morpho.skio.imread(filepath)
-        fluo_stack = morpho.skio.imread(fluo_filepath)
-
-        print('I am going to analyze %s timepoints.' % (len(tran_stack)))
-
         with multiprocessing.Pool(self.workers) as p:
             file_results = []
             for this_df in p.imap_unordered(morpho.timepoint_to_df,
-                                            _my_iterator(tran_stack,
-                                                         fluo_stack,
-                                                         filepath,
+                                            _my_iterator(filepath,
                                                          fluo_filepath,
                                                          region)):
                 file_results.append(this_df)
@@ -225,8 +218,16 @@ class Organyzer(object):
         self.save_results()
 
 
-def _my_iterator(tran_stack, fluo_stack, filepath, fluo_filepath, region):
+def _my_iterator(filepath, fluo_filepath, region):
     """Generates an iterator over the stack of images to use for
     multiprocessing."""
-    for ndx, (tran0, fluo0) in enumerate(zip(tran_stack, fluo_stack)):
-        yield ndx, tran0, fluo0, filepath, fluo_filepath, region
+
+    tran_meta = im.get_metadata(filepath)
+
+    times = int(tran_meta['time'])
+    z = int(tran_meta['z'])
+
+    keys = np.arange(times * z).reshape(times, z)
+
+    for ndx, (key) in enumerate(keys):
+        yield ndx, key, filepath, fluo_filepath, region
