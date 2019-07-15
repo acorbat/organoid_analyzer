@@ -48,19 +48,27 @@ def mask_organoids(img, region, min_organoid_size=1000):
     dimensions = len(img.shape)
 
     if dimensions == 3:
-        processed_image = np.asarray([filters.sobel(this_processed_image)
-                                      for this_processed_image
-                                      in processed_image])
-        processed_image = np.nanmax(processed_image, axis=0)
-        threshold = filters.threshold_otsu(processed_image)
+        pass
 
     elif dimensions == 2:
-        processed_image = filters.sobel(processed_image)
-        threshold = filters.threshold_otsu(processed_image) / 2
+        img = img[np.newaxis, :]
 
     else:
         raise ValueError('Mask organoids works with 2 or 3 dimensions but %s '
                          'were given' % dimensions)
+
+    processed_image = np.asarray([filters.sobel(this_processed_image)
+                                  for this_processed_image
+                                  in processed_image])
+    processed_image = np.nanmax(processed_image, axis=0)
+
+    if img.shape[0] > 1:
+        threshold = filters.threshold_otsu(processed_image)
+    elif img.shape[0] == 1:
+        threshold = filters.threshold_otsu(processed_image) / 2
+    else:
+        raise ValueError('Something really strange happened with the length of'
+                         ' image')
 
     mask = processed_image > threshold
 
@@ -581,7 +589,8 @@ def get_description(mask, descriptors=None):
 
 
 def get_texture_description(img, snake):
-
+    """Returns a dictionary with the texture descriptors of the masked
+    image."""
     description = {}
     masked_img = get_masked_img(img, snake)
     weighted_hu_moments = get_hu_moments(masked_img)
@@ -593,6 +602,16 @@ def get_texture_description(img, snake):
 
     for j in range(13):
         description['haralick_' + str(j + 1)] = haral[j]
+
+    return description
+
+
+def generate_description(snake, img):
+    """Generates a dictionary with the descriptors of the snake and image
+    provided."""
+    mask = snake_to_mask(snake, img.shape)
+    description = get_description(mask)
+    description.update(get_texture_description(img, snake))
 
     return description
 
@@ -630,25 +649,31 @@ def segment_timepoint(tran, fluo, region):
     Returns
     -------
     results : dict
-        Returns a dictionary with the results of the analysis.
+        Returns a dictionary with the results of the analysis. or a list of
+        results if more than one z plane was analyzed.
         keys:
+            z : int
+                Z plane number
+            init_snake : list
+                List of coordinates of the initial contour
             external_snakes : list
                 List of coordinates of the external contour
-            internal_snakes : list
-                List of coordinates of the internal contour
-            lumen_snakes : list
-                List of coordinates of the lumen contour obtained from
-                fluorescence channel"""
-
-    mask, processed_image = mask_organoids(tran, region)
-    init_snake = get_init_snake(mask, region)
+            # internal_snakes : list
+            #     List of coordinates of the internal contour
+            # lumen_snakes : list
+            #     List of coordinates of the lumen contour obtained from
+            #     fluorescence channel
+            """
 
     if len(tran.shape) == 2:
         tran = tran[np.newaxis, :]
     elif len(tran.shape) != 3:
         raise ValueError('Dimension of timepoint is neither 2 or 3.')
 
-    results = {'z': [], 'initial_snake': [], 'external_snakes': []}
+    mask, processed_image = mask_organoids(tran, region)
+    init_snake = get_init_snake(mask, region)
+
+    results = {'z': [], 'initial_snake': [], 'external_snake': []}
     for z, tran_z in enumerate(tran):
         e_snk = find_external(tran, init_snake, mult=-1)
         # i_snk, _ = find_internal(tran, e_snk)
@@ -660,7 +685,7 @@ def segment_timepoint(tran, fluo, region):
 
         results['z'].append([z])
         results['initial_snake'].append([init_snake])
-        results['external_snakes'].append([e_snk])
+        results['external_snake'].append([e_snk])
     # 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
 
     return results
@@ -692,7 +717,7 @@ def timepoint_to_df(params):
     Parameters
     ----------
     params : list
-        ndx, tran, fluo, region, filepath, fluo_filepath
+        ndx, key, region, filepath, fluo_filepath
 
     Returns
     -------
@@ -709,26 +734,38 @@ def timepoint_to_df(params):
     tran = tran_img.asarray(key=key)
     fluo = fluo_img.asarray(key=key)
 
+    if len(tran.shape) == 2:
+        tran = tran[np.newaxis, :]
+    elif len(tran.shape) != 3:
+        raise ValueError('Dimension of timepoint is neither 2 or 3.')
+
     to_save = segment_timepoint(tran, fluo, region)
-    mask = snake_to_mask(to_save['external_snakes'][0], tran.shape)
-    description = get_description(mask)
-    description.update(get_texture_description(tran,
-                                               to_save['external_snakes'][0]))
 
-    df = pd.DataFrame(to_save)
+    dfs = []
+    dict_keys = list(to_save.keys())
+    for vals in zip(*to_save.values()):
+        df = pd.DataFrame({this_key: [this_val]
+                           for this_key, this_val in zip(dict_keys, vals)})
 
-    for prop in description.keys():
-        if isinstance(description[prop], (tuple, list, np.ndarray)):
-            df[prop] = [description[prop]]
-        else:
-            df[prop] = description[prop]
+        description = generate_description(df['external_snake'].values[0],
+                                           tran[df['z'].values[0]])
 
-    df['tran_path'] = filepath
-    df['fluo_path'] = fluo_filepath
-    df['crop'] = [region]
-    df['timepoint'] = ndx
+        for prop in description.keys():
+            if isinstance(description[prop], (tuple, list, np.ndarray)):
+                df[prop] = [description[prop]]
+            else:
+                df[prop] = description[prop]
 
-    return df
+        df['tran_path'] = filepath
+        df['fluo_path'] = fluo_filepath
+        df['crop'] = [region]
+        df['timepoint'] = ndx
+
+        dfs.append(df)
+
+    dfs = pd.concat(dfs, ignore_index=True)
+
+    return dfs
         
             
 def test_circle():
