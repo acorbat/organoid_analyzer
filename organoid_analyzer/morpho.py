@@ -2,7 +2,7 @@ import os
 import itertools as itools
 import pandas as pd
 
-from scipy import signal
+from scipy import signal, ndimage as ndi
 import numpy as np
 from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
@@ -52,15 +52,16 @@ def mask_organoids(img, region, min_organoid_size=1000):
                                       for this_processed_image
                                       in processed_image])
         processed_image = np.nanmax(processed_image, axis=0)
+        threshold = filters.threshold_otsu(processed_image)
 
     elif dimensions == 2:
         processed_image = filters.sobel(processed_image)
+        threshold = filters.threshold_otsu(processed_image) / 2
 
     else:
         raise ValueError('Mask organoids works with 2 or 3 dimensions but %s '
                          'were given' % dimensions)
 
-    threshold = filters.threshold_otsu(processed_image)
     mask = processed_image > threshold
 
     # We discard all foreground corresponding to other regions. At this point
@@ -98,6 +99,15 @@ def get_filled_snake_from_mask(mask):
     init_snake = sort_snake(init_snake)
     init_snake = np.asarray([init_snake[:, 1], init_snake[:, 0]]).T
 
+    return init_snake
+
+
+def get_init_snake(mask, region):
+    """Generates an initial snake by running active contours from region to the
+     borders of the mask."""
+    mask = morphology.binary_dilation(mask, selem=morphology.disk(3))
+    distance = ndi.distance_transform_edt(~mask)
+    init_snake = find_external(distance, region, mult=-10, gamma=0.001)
     return init_snake
 
 
@@ -631,16 +641,26 @@ def segment_timepoint(tran, fluo, region):
                 fluorescence channel"""
 
     mask, processed_image = mask_organoids(tran, region)
-    init_snake = get_filled_snake_from_mask(mask)
-    e_snk = find_external(tran, init_snake, mult=-1)
-    # i_snk, _ = find_internal(tran, e_snk)
-    # l_snk = find_external(fluo, init_snake, mult=1)
-    mask = snake_to_mask(e_snk, tran.shape)
-    labeled = morphology.label(mask)
-    if (labeled == 0).all():
-        e_snk = find_external(tran, init_snake, mult=-1, gamma=0.1)
+    init_snake = get_init_snake(mask, region)
 
-    results = {'initial_snake': [init_snake], 'external_snakes': [e_snk]}
+    if len(tran.shape) == 2:
+        tran = tran[np.newaxis, :]
+    elif len(tran.shape) != 3:
+        raise ValueError('Dimension of timepoint is neither 2 or 3.')
+
+    results = {'z': [], 'initial_snake': [], 'external_snakes': []}
+    for z, tran_z in enumerate(tran):
+        e_snk = find_external(tran, init_snake, mult=-1)
+        # i_snk, _ = find_internal(tran, e_snk)
+        # l_snk = find_external(fluo, init_snake, mult=1)
+        mask = snake_to_mask(e_snk, tran.shape)
+        labeled = morphology.label(mask)
+        if (labeled == 0).all():  # I am not sure this is still necessary
+            e_snk = find_external(tran, init_snake, mult=-1, gamma=0.1)
+
+        results['z'].append([z])
+        results['initial_snake'].append([init_snake])
+        results['external_snakes'].append([e_snk])
     # 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
 
     return results
