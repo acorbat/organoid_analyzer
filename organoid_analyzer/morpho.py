@@ -18,27 +18,48 @@ def mask_organoids(img, region, min_organoid_size=1000):
     1. Rescaling of intensity to float.
     2. inversion of intensities.
     3. Gamma adjustment of 5.
-    4. filtered with sobel to find edges.
+    4. filtered with sobel to find edges. If it is 3D, a maximum projection of
+    sobel is given.
     5. Thresholded with Otsu.
     6. small holes and small objects are removed according to
     min_organoid_size.
 
     Parameters
     ----------
-    img : np.array
+    img : np.array 2D or 3D.
         transmission image of specific timepoint.
-    min_organoid_size : int
-        minimum area in pixels of a typical organoid.
+    region : list of 4 elements
+        bbox of the region were the organoid should be found.
+    min_organoid_size : int, optional
+        minimum area in pixels of a typical organoid. (default=1000)
 
     Returns
     -------
     mask : np.array(dtype=bool)
-        boolean mask corresponding to the segmentation performed."""
+        boolean mask corresponding to the segmentation performed.
+    processed_image : np.array 2D always
+        Sobel filtered image of the given image or stack. If it was 3D, a
+        maximum projection is returned."""
 
     processed_image = util.img_as_float(img)
     processed_image = util.invert(processed_image)
     processed_image = exposure.adjust_gamma(processed_image, 5)
-    processed_image = filters.sobel(processed_image)
+
+    dimensions = len(img.shape)
+
+    if dimensions == 3:
+        processed_image = np.asarray([filters.sobel(this_processed_image)
+                                      for this_processed_image
+                                      in processed_image])
+        processed_image = np.nanmax(processed_image, axis=0)
+
+    elif dimensions == 2:
+        processed_image = filters.sobel(processed_image)
+
+    else:
+        raise ValueError('Mask organoids works with 2 or 3 dimensions but %s '
+                         'were given' % dimensions)
+
     threshold = filters.threshold_otsu(processed_image)
     mask = processed_image > threshold
 
@@ -612,15 +633,15 @@ def segment_timepoint(tran, fluo, region):
     mask, processed_image = mask_organoids(tran, region)
     init_snake = get_filled_snake_from_mask(mask)
     e_snk = find_external(tran, init_snake, mult=-1)
-    #i_snk, _ = find_internal(tran, e_snk)
-    #l_snk = find_external(fluo, init_snake, mult=1)
+    # i_snk, _ = find_internal(tran, e_snk)
+    # l_snk = find_external(fluo, init_snake, mult=1)
     mask = snake_to_mask(e_snk, tran.shape)
     labeled = morphology.label(mask)
     if (labeled == 0).all():
         e_snk = find_external(tran, init_snake, mult=-1, gamma=0.1)
 
     results = {'initial_snake': [init_snake], 'external_snakes': [e_snk]}
-    #, 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
+    # 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
 
     return results
 
