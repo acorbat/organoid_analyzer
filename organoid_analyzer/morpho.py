@@ -592,7 +592,7 @@ def get_texture_description(img, snake):
     """Returns a dictionary with the texture descriptors of the masked
     image."""
     description = {}
-    img = img.astype('uint8')  # TODO: test implicancies of reducing resolution
+    #img = img.astype('uint8')  # TODO: test implicancies of reducing resolution
     masked_img = get_masked_img(img, snake)
     weighted_hu_moments = get_hu_moments(masked_img)
     for j in range(7):
@@ -739,6 +739,10 @@ def timepoint_to_df(params):
         tran = tran[np.newaxis, :]
     elif len(tran.shape) != 3:
         raise ValueError('Dimension of timepoint is neither 2 or 3.')
+
+    # Some saved images have a bit problem and they have 2^15 offset value
+    if tran[0, 0, 0] >= 2**15:
+        tran -= 2**15
 
     to_save = segment_timepoint(tran, fluo, region)
 

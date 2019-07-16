@@ -23,7 +23,7 @@ class Organyzer(object):
         self.set_output_path_and_load_df()
 
         # set parameters for analysis and saving files
-        self.workers = 1  # How many threads can be used
+        self.workers = 5  # How many threads can be used
 
     def set_output_path_and_load_df(self):
         """Looks for existing saved pandas files, loads them if existent and
