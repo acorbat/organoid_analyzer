@@ -224,8 +224,12 @@ def _my_iterator(filepath, fluo_filepath, region):
 
     tran_meta = im.get_metadata(filepath)
 
-    times = int(tran_meta['time'])
-    z = int(tran_meta['z'])
+    try:
+        times = int(tran_meta['time'])
+        z = int(tran_meta['z'])
+    except KeyError:
+        times = int(tran_meta['frames'])
+        z = int(tran_meta['slices'])
 
     keys = np.arange(times * z).reshape(times, z)
 

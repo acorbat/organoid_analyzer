@@ -260,7 +260,7 @@ def mask_to_snake(mask):
 
 
 def snake_to_mask(snake, shape):
-    rr, cc = draw.polygon(snake[:,1], snake[:,0], shape)
+    rr, cc = draw.polygon(snake[:, 1], snake[:, 0], shape)
     img = np.zeros(shape, 'uint8')
     img[rr, cc] = 1
     return img
@@ -592,6 +592,7 @@ def get_texture_description(img, snake):
     """Returns a dictionary with the texture descriptors of the masked
     image."""
     description = {}
+    img = img.astype('uint8')  # TODO: test implicancies of reducing resolution
     masked_img = get_masked_img(img, snake)
     weighted_hu_moments = get_hu_moments(masked_img)
     for j in range(7):
@@ -744,7 +745,7 @@ def timepoint_to_df(params):
     dfs = []
     dict_keys = list(to_save.keys())
     for vals in zip(*to_save.values()):
-        df = pd.DataFrame({this_key: [this_val]
+        df = pd.DataFrame({this_key: this_val
                            for this_key, this_val in zip(dict_keys, vals)})
 
         description = generate_description(df['external_snake'].values[0],
