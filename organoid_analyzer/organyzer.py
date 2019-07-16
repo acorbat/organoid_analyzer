@@ -6,7 +6,7 @@ import numpy as np
 
 from organoid_analyzer import orgapath as op
 from organoid_analyzer import morpho
-
+from organoid_analyzer import image_manager as im
 
 class Organyzer(object):
 
@@ -80,7 +80,6 @@ class Organyzer(object):
             self.filepath_yaml_crop = \
                 self.filepath_yaml.with_name(self.filepath_yaml.stem +
                                              '_crop.yaml')
-
 
         elif 'crop' in filepath.stem:
             print('I am going to analyze already cropped stacks from this '
@@ -170,69 +169,17 @@ class Organyzer(object):
             df : pandas DataFrame
                 DataFrame containing all the results from the analysis"""
 
-        tran_stack = morpho.skio.imread(filepath)
-        fluo_stack = morpho.skio.imread(fluo_filepath)
-
-        print('I am going to analyze %s timepoints.' % (len(tran_stack)))
-
         with multiprocessing.Pool(self.workers) as p:
             file_results = []
-            for this_df in p.imap_unordered(self.timepoint_to_df,
-                                            self._my_iterator(tran_stack,
-                                                              fluo_stack,
-                                                              filepath,
-                                                              fluo_filepath,
-                                                              region)):
+            for this_df in p.imap_unordered(morpho.timepoint_to_df,
+                                            _my_iterator(filepath,
+                                                         fluo_filepath,
+                                                         region)):
                 file_results.append(this_df)
 
         df = pd.concat(file_results, ignore_index=True)
         df.sort_values('timepoint', inplace=True)
         df.reset_index(drop=True, inplace=True)
-
-        return df
-
-    def _my_iterator(self, tran_stack, fluo_stack,
-                     filepath, fluo_filepath, region):
-        """Generates an iterator over the stack of images to use for
-        multiprocessing."""
-        for ndx, (tran0, fluo0) in enumerate(zip(tran_stack, fluo_stack)):
-            yield ndx, tran0, fluo0, filepath, fluo_filepath, region
-
-    def timepoint_to_df(self, params):
-        """Analyzes a single timepoint and generates a small pandas DataFrame.
-
-        Parameters
-        ----------
-        params : list
-            ndx, tran, fluo, region, filepath, fluo_filepath
-
-        Returns
-        -------
-        df : pandas DataFrame
-            Small DataFrame with the results of a single timepoint analysis."""
-
-        ndx, tran, fluo, filepath, fluo_filepath, region = params
-
-        print('analyzing timepoint %s from file %s' % (ndx, filepath))
-
-        to_save = morpho.segment_timepoint(tran, fluo, region)
-        mask = morpho.snake_to_mask(to_save['external_snakes'][0], tran.shape)
-        description = morpho.get_description(mask)
-        description.update(morpho.get_texture_description(
-            tran, to_save['external_snakes'][0]))
-
-        df = pd.DataFrame(to_save)
-
-        for prop in description.keys():
-            if isinstance(description[prop], (tuple, list, np.ndarray)):
-                df[prop] = [description[prop]]
-            else:
-                df[prop] = description[prop]
-
-        df['tran_path'] = filepath
-        df['fluo_path'] = fluo_filepath
-        df['crop'] = [region]
-        df['timepoint'] = ndx
 
         return df
 
@@ -269,3 +216,22 @@ class Organyzer(object):
         else:
             self.df = all_df.copy()
         self.save_results()
+
+
+def _my_iterator(filepath, fluo_filepath, region):
+    """Generates an iterator over the stack of images to use for
+    multiprocessing."""
+
+    tran_meta = im.get_metadata(filepath)
+
+    try:
+        times = int(tran_meta['time'])
+        z = int(tran_meta['z'])
+    except KeyError:
+        times = int(tran_meta['frames'])
+        z = int(tran_meta['slices'])
+
+    keys = np.arange(times * z).reshape(times, z)
+
+    for ndx, (key) in enumerate(keys):
+        yield ndx, key, filepath, fluo_filepath, region

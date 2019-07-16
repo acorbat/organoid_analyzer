@@ -1,11 +1,14 @@
 import os
 import itertools as itools
+import pandas as pd
 
-from scipy import signal
+from scipy import signal, ndimage as ndi
 import numpy as np
 from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
 from mahotas.features import haralick
+
+from img_manager import tifffile as tif
 
 active_contour = segmentation.active_contour
 
@@ -15,32 +18,62 @@ def mask_organoids(img, region, min_organoid_size=1000):
     1. Rescaling of intensity to float.
     2. inversion of intensities.
     3. Gamma adjustment of 5.
-    4. filtered with sobel to find edges.
+    4. filtered with sobel to find edges. If it is 3D, a maximum projection of
+    sobel is given.
     5. Thresholded with Otsu.
     6. small holes and small objects are removed according to
     min_organoid_size.
 
     Parameters
     ----------
-    img : np.array
+    img : np.array 2D or 3D.
         transmission image of specific timepoint.
-    min_organoid_size : int
-        minimum area in pixels of a typical organoid.
+    region : list of 4 elements
+        bbox of the region were the organoid should be found.
+    min_organoid_size : int, optional
+        minimum area in pixels of a typical organoid. (default=1000)
 
     Returns
     -------
     mask : np.array(dtype=bool)
-        boolean mask corresponding to the segmentation performed."""
+        boolean mask corresponding to the segmentation performed.
+    processed_image : np.array 2D always
+        Sobel filtered image of the given image or stack. If it was 3D, a
+        maximum projection is returned."""
 
     processed_image = util.img_as_float(img)
     processed_image = util.invert(processed_image)
     processed_image = exposure.adjust_gamma(processed_image, 5)
-    processed_image = filters.sobel(processed_image)
-    threshold = filters.threshold_otsu(processed_image)/2
+
+    dimensions = len(img.shape)
+
+    if dimensions == 3:
+        pass
+
+    elif dimensions == 2:
+        img = img[np.newaxis, :]
+
+    else:
+        raise ValueError('Mask organoids works with 2 or 3 dimensions but %s '
+                         'were given' % dimensions)
+
+    processed_image = np.asarray([filters.sobel(this_processed_image)
+                                  for this_processed_image
+                                  in processed_image])
+    processed_image = np.nanmax(processed_image, axis=0)
+
+    if img.shape[0] > 1:
+        threshold = filters.threshold_otsu(processed_image)
+    elif img.shape[0] == 1:
+        threshold = filters.threshold_otsu(processed_image) / 2
+    else:
+        raise ValueError('Something really strange happened with the length of'
+                         ' image')
+
     mask = processed_image > threshold
 
-    # We discard all foreground corresponding to other regions. At this point it
-    # might allow us to discard objects at border of region.
+    # We discard all foreground corresponding to other regions. At this point
+    # it might allow us to discard objects at border of region.
     (xmin, xmax, ymin, ymax) = region
     mask[:int(ymin), :] = 0
     mask[int(ymax):, :] = 0
@@ -74,6 +107,15 @@ def get_filled_snake_from_mask(mask):
     init_snake = sort_snake(init_snake)
     init_snake = np.asarray([init_snake[:, 1], init_snake[:, 0]]).T
 
+    return init_snake
+
+
+def get_init_snake(mask, region):
+    """Generates an initial snake by running active contours from region to the
+     borders of the mask."""
+    mask = morphology.binary_dilation(mask, selem=morphology.disk(3))
+    distance = ndi.distance_transform_edt(~mask)
+    init_snake = find_external(distance, region, mult=-10, gamma=0.001)
     return init_snake
 
 
@@ -218,7 +260,7 @@ def mask_to_snake(mask):
 
 
 def snake_to_mask(snake, shape):
-    rr, cc = draw.polygon(snake[:,1], snake[:,0], shape)
+    rr, cc = draw.polygon(snake[:, 1], snake[:, 0], shape)
     img = np.zeros(shape, 'uint8')
     img[rr, cc] = 1
     return img
@@ -547,8 +589,10 @@ def get_description(mask, descriptors=None):
 
 
 def get_texture_description(img, snake):
-
+    """Returns a dictionary with the texture descriptors of the masked
+    image."""
     description = {}
+    #img = img.astype('uint8')  # TODO: test implicancies of reducing resolution
     masked_img = get_masked_img(img, snake)
     weighted_hu_moments = get_hu_moments(masked_img)
     for j in range(7):
@@ -559,6 +603,16 @@ def get_texture_description(img, snake):
 
     for j in range(13):
         description['haralick_' + str(j + 1)] = haral[j]
+
+    return description
+
+
+def generate_description(snake, img):
+    """Generates a dictionary with the descriptors of the snake and image
+    provided."""
+    mask = snake_to_mask(snake, img.shape)
+    description = get_description(mask)
+    description.update(get_texture_description(img, snake))
 
     return description
 
@@ -596,28 +650,44 @@ def segment_timepoint(tran, fluo, region):
     Returns
     -------
     results : dict
-        Returns a dictionary with the results of the analysis.
+        Returns a dictionary with the results of the analysis. or a list of
+        results if more than one z plane was analyzed.
         keys:
+            z : int
+                Z plane number
+            init_snake : list
+                List of coordinates of the initial contour
             external_snakes : list
                 List of coordinates of the external contour
-            internal_snakes : list
-                List of coordinates of the internal contour
-            lumen_snakes : list
-                List of coordinates of the lumen contour obtained from
-                fluorescence channel"""
+            # internal_snakes : list
+            #     List of coordinates of the internal contour
+            # lumen_snakes : list
+            #     List of coordinates of the lumen contour obtained from
+            #     fluorescence channel
+            """
+
+    if len(tran.shape) == 2:
+        tran = tran[np.newaxis, :]
+    elif len(tran.shape) != 3:
+        raise ValueError('Dimension of timepoint is neither 2 or 3.')
 
     mask, processed_image = mask_organoids(tran, region)
-    init_snake = get_filled_snake_from_mask(mask)
-    e_snk = find_external(tran, init_snake, mult=-1)
-    #i_snk, _ = find_internal(tran, e_snk)
-    #l_snk = find_external(fluo, init_snake, mult=1)
-    mask = snake_to_mask(e_snk, tran.shape)
-    labeled = morphology.label(mask)
-    if (labeled == 0).all():
-        e_snk = find_external(tran, init_snake, mult=-1, gamma=0.1)
+    init_snake = get_init_snake(mask, region)
 
-    results = {'initial_snake': [init_snake], 'external_snakes': [e_snk]}
-    #, 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
+    results = {'z': [], 'initial_snake': [], 'external_snake': []}
+    for z, tran_z in enumerate(tran):
+        e_snk = find_external(tran, init_snake, mult=-1)
+        # i_snk, _ = find_internal(tran, e_snk)
+        # l_snk = find_external(fluo, init_snake, mult=1)
+        mask = snake_to_mask(e_snk, tran.shape)
+        labeled = morphology.label(mask)
+        if (labeled == 0).all():  # I am not sure this is still necessary
+            e_snk = find_external(tran, init_snake, mult=-1, gamma=0.1)
+
+        results['z'].append([z])
+        results['initial_snake'].append([init_snake])
+        results['external_snake'].append([e_snk])
+    # 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
 
     return results
 
@@ -640,6 +710,67 @@ def analyze_timeseries(stacks, region):
         l_snks.append(result['l_snk'])
 
     return e_snks, i_snks, l_snks
+
+
+def timepoint_to_df(params):
+    """Analyzes a single timepoint and generates a small pandas DataFrame.
+
+    Parameters
+    ----------
+    params : list
+        ndx, key, region, filepath, fluo_filepath
+
+    Returns
+    -------
+    df : pandas DataFrame
+        Small DataFrame with the results of a single timepoint analysis."""
+
+    ndx, key, filepath, fluo_filepath, region = params
+
+    print('analyzing timepoint %s from file %s' % (ndx, filepath))
+
+    tran_img = tif.TiffFile(str(filepath))
+    fluo_img = tif.TiffFile(str(fluo_filepath))
+
+    tran = tran_img.asarray(key=key)
+    fluo = fluo_img.asarray(key=key)
+
+    if len(tran.shape) == 2:
+        tran = tran[np.newaxis, :]
+    elif len(tran.shape) != 3:
+        raise ValueError('Dimension of timepoint is neither 2 or 3.')
+
+    # Some saved images have a bit problem and they have 2^15 offset value
+    if tran[0, 0, 0] >= 2**15:
+        tran -= 2**15
+
+    to_save = segment_timepoint(tran, fluo, region)
+
+    dfs = []
+    dict_keys = list(to_save.keys())
+    for vals in zip(*to_save.values()):
+        df = pd.DataFrame({this_key: this_val
+                           for this_key, this_val in zip(dict_keys, vals)})
+
+        description = generate_description(df['external_snake'].values[0],
+                                           tran[df['z'].values[0]])
+
+        for prop in description.keys():
+            if isinstance(description[prop], (tuple, list, np.ndarray)):
+                df[prop] = [description[prop]]
+            else:
+                df[prop] = description[prop]
+
+        df['tran_path'] = filepath
+        df['fluo_path'] = fluo_filepath
+        df['crop'] = [region]
+        df['timepoint'] = ndx
+
+        dfs.append(df)
+
+    dfs = pd.concat(dfs, ignore_index=True)
+
+    return dfs
         
             
 def test_circle():
