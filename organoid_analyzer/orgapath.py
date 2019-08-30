@@ -187,6 +187,8 @@ def load_mp_image(filenames, dcrop=None):
             try:
                 with Timer() as t:
                     original = io.imread(filename)
+                    # flattening first dimensions
+                    original = original.reshape(-1, *original.shape[-2:])
                     image = np.min(original, axis=0)
                     image = (image - np.min(image)) / \
                             (np.max(image) - np.min(image))
