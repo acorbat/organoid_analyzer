@@ -599,7 +599,10 @@ def get_texture_description(img, snake):
         description['intensity_hu_moment_' + str(j + 1)] = weighted_hu_moments[
             j]
 
-    haral = haralick(masked_img, ignore_zeros=True, return_mean=True)
+    try:
+        haral = haralick(masked_img, ignore_zeros=True, return_mean=True)
+    except ValueError:
+        haral = np.asarray([np.nan] * 12)
 
     for j in range(13):
         description['haralick_' + str(j + 1)] = haral[j]
