@@ -7,6 +7,7 @@ from skimage import draw
 
 from img_manager import tifffile as tif
 
+
 class ImageOrganyzer(object):
 
     def __init__(self, folder):
