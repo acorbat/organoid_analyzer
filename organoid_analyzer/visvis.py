@@ -62,11 +62,18 @@ def animate_stack_snakes(stack, *stack_snakes):
 
 
 def visualizer(image):
+    not_selected = True
     fig, axs = plt.subplots(2, 1, gridspec_kw={'height_ratios': [5, 1]})
 
-    subplot = SubPlot(axs[0], image, z=image.shape[1]//2, t=image.shape[0]//2)
+    ini_z = image.shape[1]//2
+    ini_t = image.shape[0]//2
+
+    subplot = SubPlot(axs[0], image, z=ini_z, t=ini_t)
 
     callback = Index(subplot, image.shape[1]-1, image.shape[0]-1)
+    callback.cur_z = ini_z
+    callback.cur_t = ini_t
+
     plt.sca(axs[1])
 
     axs[1].axis('off')
@@ -87,13 +94,19 @@ def visualizer(image):
 
     def chosen_t(event):
         plt.close()
-        return callback.cur_t
+        nonlocal not_selected
+        not_selected = False
 
     axchoose = plt.axes([0.1, 0.05, 0.1, 0.075])
     bchoose = Button(axchoose, 'Select')
     bchoose.on_clicked(chosen_t)
 
     plt.show()
+
+    while not_selected:
+        continue
+
+    return callback.cur_t
 
 
 class SubPlot(object):
