@@ -105,14 +105,14 @@ class SubPlot(object):
 
         plt.sca(self.axs)
 
-        self.axs.imshow(self.stack[self.t][self.z])
+        self.img = self.axs.imshow(self.stack[self.t][self.z])
 
         self.set_title()
         plt.draw()
 
     def update(self):
         plt.sca(self.axs)
-        self.axs.imshow(self.stack[self.t][self.z])
+        self.img.set_data(self.stack[self.t][self.z])
         self.set_title()
         plt.draw()
 
