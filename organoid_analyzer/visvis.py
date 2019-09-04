@@ -64,22 +64,22 @@ def animate_stack_snakes(stack, *stack_snakes):
 def visualizer(image):
     fig, axs = plt.subplots(2, 1, gridspec_kw={'height_ratios': [5, 1]})
 
-    subplot = SubPlot(axs[0], image)
+    subplot = SubPlot(axs[0], image, z=image.shape[1]//2, t=image.shape[0]//2)
 
-    callback = Index(subplot, image.shape[0], image.shape[1])
+    callback = Index(subplot, image.shape[1]-1, image.shape[0]-1)
     plt.sca(axs[1])
 
     axs[1].axis('off')
 
-    axprev_z = plt.axes([0.7, 0.05, 0.1, 0.075])
-    axnext_z = plt.axes([0.8, 0.05, 0.1, 0.075])
+    axprev_z = plt.axes([0.6, 0.05, 0.15, 0.075])
+    axnext_z = plt.axes([0.75, 0.05, 0.15, 0.075])
     bnext_z = Button(axnext_z, 'Next Z')
     bnext_z.on_clicked(callback.next_z)
     bprev_z = Button(axprev_z, 'Previous Z')
     bprev_z.on_clicked(callback.prev_z)
 
-    axprev_t = plt.axes([0.6, 0.05, 0.1, 0.075])
-    axnext_t = plt.axes([0.5, 0.05, 0.1, 0.075])
+    axprev_t = plt.axes([0.3, 0.05, 0.15, 0.075])
+    axnext_t = plt.axes([0.45, 0.05, 0.15, 0.075])
     bnext_t = Button(axnext_t, 'Next T')
     bnext_t.on_clicked(callback.next_t)
     bprev_t = Button(axprev_t, 'Previous T')
@@ -88,9 +88,11 @@ def visualizer(image):
     def chosen_t(event):
         return callback.cur_t
 
-    axchoose = plt.axes([0.4, 0.05, 0.1, 0.075])
+    axchoose = plt.axes([0.1, 0.05, 0.1, 0.075])
     bchoose = Button(axchoose, 'Select')
     bchoose.on_clicked(chosen_t)
+
+    plt.show()
 
 
 class SubPlot(object):

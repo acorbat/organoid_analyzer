@@ -192,13 +192,14 @@ def load_mp_image(filenames, dcrop=None):
             try:
                 with Timer() as t:
                     original = io.imread(filename)
-                    image = original.reshape(-1, *image.shape[-2:])
+                    image = original.reshape(-1, *original.shape[-2:])
                     image = np.min(image, axis=0)
                     image = (image - np.min(image)) / \
                             (np.max(image) - np.min(image))
                 print('%.2f: %s' % (t.elapsed, filename))
                 yield filename, image
             except:
+                print('time projection for rectangle selection failed')
                 yield filename, None
 
 
@@ -218,6 +219,7 @@ def load_stack(filenames, dcrop=None):
                 print('%.2f: %s' % (t.elapsed, filename))
                 yield filename, original
             except:
+                print('load stack did not work')
                 yield filename, None
 
 
@@ -251,11 +253,13 @@ def add_crop_to_yaml(filename, crop_filename=None):
 
             else:
                 image = image_or_crop
-                chosen_t = 2
-                vv.visualizer(image)
+                chosen_t = vv.visualizer(image)
                 print(chosen_t)
 
                 v['time_crop'] = chosen_t
+
+                if chosen_t is None:
+                    break
 
             dinput[k] = v
 
