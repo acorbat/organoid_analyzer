@@ -23,14 +23,14 @@ def scan_folder(folder):
         trans = yfp.with_name(yfp.name.replace('YFP', 'Trans'))
         if trans.exists():
             yield trans, yfp
-            
+
 
 def create_base_yaml(folder, output):
     """Generates a yaml dictionary at output with all the pairs of stacks found
     at folder."""
     append_to_yaml(folder, output, {})
-        
-        
+
+
 def append_to_yaml(folder, output, filename_or_dict):
     """Appends pairs of stacks found at folder to the yaml dictionary at
     filename_or_dict (or dictionary) and saves it
@@ -55,7 +55,7 @@ def append_to_yaml(folder, output, filename_or_dict):
 
     for trans, yfp in scan_folder(folder):
         d[str(trans)] = {'yfp': str(yfp)}
-    
+
     with open(output, 'w', encoding='utf-8') as fo:
         fo.write(yaml.dump(d))
 
@@ -76,7 +76,7 @@ def test_yaml(filename):
         cnt3 += 1 if ok3 else 0
     print('---')
     print('%d out of %d. Crop %d' % (cnt, len(d), cnt3))
-    
+
 
 # Object used by _background_consumer to signal the source is exhausted
 # to the main thread.
@@ -99,6 +99,7 @@ class _background_consumer(Thread):
     >>> q.get(True, 1) is _sentinel
     True
     """
+
     def __init__(self, queue, source):
         Thread.__init__(self)
 
@@ -147,6 +148,7 @@ class ibuffer(object):
 
     60% FASTER!!!!!11
     """
+
     def __init__(self, size, source):
         self._queue = queue.Queue(size)
 
@@ -166,13 +168,14 @@ class ibuffer(object):
 
 class Timer(object):
     """As clear as the name."""
+
     def __enter__(self):
         self.t = time.clock()
         return self
 
     def __exit__(self, type, value, traceback):
         self.elapsed = time.clock() - self.t
-        
+
 
 def load_mp_image(filenames, dcrop=None):
     """Iterates over the given list of filenames and yields filename and either
@@ -189,15 +192,35 @@ def load_mp_image(filenames, dcrop=None):
             try:
                 with Timer() as t:
                     original = io.imread(filename)
-                    image = np.min(original, axis=0)
+                    image = original.reshape(-1, *image.shape[-2:])
+                    image = np.min(image, axis=0)
                     image = (image - np.min(image)) / \
                             (np.max(image) - np.min(image))
-                print('%.2f: %s' % (t.elapsed, filename))    
+                print('%.2f: %s' % (t.elapsed, filename))
                 yield filename, image
             except:
                 yield filename, None
 
-    
+
+def load_stack(filenames, dcrop=None):
+    """Iterates over the given list of filenames and yields filename and either
+    the saved crop coordinates (if dcrop has them), a normalized image to
+    perform the crop or None if errors arise while getting the image."""
+    for filename in filenames:
+        k = filename
+        if dcrop and k in dcrop and 'time_crop' in dcrop[k]:
+            yield filename, dcrop[k]['time_crop']
+        else:
+            try:
+                with Timer() as t:
+                    original = io.imread(filename)
+
+                print('%.2f: %s' % (t.elapsed, filename))
+                yield filename, original
+            except:
+                yield filename, None
+
+
 def add_crop_to_yaml(filename, crop_filename=None):
     """Opens filename dictionary and asks for a crop to be saved at filename +
     _crop. If crop_filename is given, then it checks whether a crop has been
@@ -207,12 +230,39 @@ def add_crop_to_yaml(filename, crop_filename=None):
             dcrop = yaml.load(fi.read())
     else:
         dcrop = None
-    
+
     with open(filename, 'r', encoding='utf-8') as fi:
         dinput = yaml.load(fi.read())
-    
+
     dout = {}
-        
+
+    # Manage Time crops
+    try:
+        for ndx, (k, image_or_crop) in \
+                enumerate(load_stack(dinput.keys(), dcrop)):
+            print('%d/%d: %s' % (ndx, len(dinput), k))
+            v = dinput[k]
+
+            if image_or_crop is None:
+                pass
+
+            elif isinstance(image_or_crop, int):
+                v['time_crop'] = image_or_crop
+
+            else:
+                image = image_or_crop
+                chosen_t = 2
+                vv.visualizer(image)
+                print(chosen_t)
+
+                v['time_crop'] = chosen_t
+
+            dinput[k] = v
+
+    except KeyboardInterrupt:
+        pass
+
+    # Manage Rectangle crops
     try:
         for ndx, (k, image_or_crop) in \
                 enumerate(ibuffer(10, load_mp_image(dinput.keys(), dcrop))):
@@ -224,16 +274,9 @@ def add_crop_to_yaml(filename, crop_filename=None):
 
             elif isinstance(image_or_crop, (list, tuple)):
                 v['crop'] = image_or_crop
-            
+
             else:
                 image = image_or_crop
-                # Perform time crop
-                chosen_t = vv.visualizer(image)
-                print(chosen_t)
-
-                # Perform rectangle crop
-                # flattening first dimensions
-                image = image.reshape(-1, *image.shape[-2:])
                 viewer = ImageViewer(image)
                 rect_tool = RectangleTool(viewer)
                 viewer.show()
@@ -242,10 +285,10 @@ def add_crop_to_yaml(filename, crop_filename=None):
                 print(image.shape, x)
 
                 if x[0] == 0:
-                    break               
-                    
+                    break
+
                 v['crop'] = x
-                
+
             dout[k] = v
 
     except KeyboardInterrupt:
