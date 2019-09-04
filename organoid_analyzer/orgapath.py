@@ -258,9 +258,6 @@ def add_crop_to_yaml(filename, crop_filename=None):
 
                 v['time_crop'] = chosen_t
 
-                if chosen_t is None:
-                    break
-
             dinput[k] = v
 
     except KeyboardInterrupt:

@@ -86,6 +86,7 @@ def visualizer(image):
     bprev_t.on_clicked(callback.prev_t)
 
     def chosen_t(event):
+        plt.close()
         return callback.cur_t
 
     axchoose = plt.axes([0.1, 0.05, 0.1, 0.075])
