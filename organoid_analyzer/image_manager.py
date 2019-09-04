@@ -187,3 +187,26 @@ def get_metadata(filepath):
                 pass
 
     return meta_dict
+
+
+def get_keys(filepath, last_time=None):
+    tran_meta = get_metadata(filepath)
+
+    try:
+        times = int(tran_meta['time'])
+        z = int(tran_meta['z'])
+    except KeyError:
+        times = int(tran_meta['frames'])
+        z = int(tran_meta['slices'])
+
+    if last_time:
+        times = last_time
+
+    return np.arange(times * z).reshape(times, z)
+
+
+def load_stack(filepath, last_time=None):
+    keys = get_keys(filepath, last_time=last_time)
+    stack = tif.TiffFile(str(filepath)).asarray(key=keys.flatten())
+
+    return stack

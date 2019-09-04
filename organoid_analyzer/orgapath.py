@@ -11,9 +11,8 @@ from skimage.viewer import ImageViewer
 from skimage.viewer.canvastools import RectangleTool
 from skimage.viewer.plugins.base import Plugin
 
-from img_manager import tifffile as tif
-
 from . import visvis as vv
+from . import image_manager as im
 
 
 def scan_folder(folder):
@@ -194,8 +193,9 @@ def load_mp_image(filenames, dcrop=None):
             try:
                 with Timer() as t:
                     if 'time_crop' in dcrop[k]:
-                        original = tif.TiffFile(str(filename)).asarray(
-                            key=np.arange(dcrop[k]['time_crop']))
+                        original = im.load_stack(filename,
+                                                 last_time=dcrop[k]['time_crop']
+                                                 )
                     else:
                         original = io.imread(filename)
                     image = original.reshape(-1, *original.shape[-2:])

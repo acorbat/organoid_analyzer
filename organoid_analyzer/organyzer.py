@@ -133,6 +133,7 @@ class Organyzer(object):
         for file in self.file_dict.keys():
             fluo_file = self.file_dict[file]['yfp']
             region = self.file_dict[file]['crop']
+            last_time = self.file_dict[file].get('time_crop')
 
             print('Analyzing file: %s' % file)
 
@@ -140,7 +141,8 @@ class Organyzer(object):
                 print('%s has already been analyzed' % file)
                 continue
 
-            this_file_res = self._analyze_file(file, fluo_file, region)
+            this_file_res = self._analyze_file(file, fluo_file,
+                                               region, last_time)
 
             print('Saving file: %s' % file)
 
@@ -152,7 +154,7 @@ class Organyzer(object):
                 self.df = this_df.copy()
             self.save_results()
 
-    def _analyze_file(self, filepath, fluo_filepath, region):
+    def _analyze_file(self, filepath, fluo_filepath, region, last_time):
         """Multiprocesses the analysis over a complete stack.
 
             Parameters
@@ -163,6 +165,9 @@ class Organyzer(object):
                 path to the fluorescence stack
             region : list, tuple
                 coordinates of the cropped region
+            last_time : int, None
+                Length of stack to be considered. If None, the complete length
+                is considered
 
             Returns
             -------
@@ -174,7 +179,8 @@ class Organyzer(object):
             for this_df in p.imap_unordered(morpho.timepoint_to_df,
                                             _my_iterator(filepath,
                                                          fluo_filepath,
-                                                         region)):
+                                                         region,
+                                                         last_time)):
                 file_results.append(this_df)
 
         df = pd.concat(file_results, ignore_index=True)
@@ -218,20 +224,11 @@ class Organyzer(object):
         self.save_results()
 
 
-def _my_iterator(filepath, fluo_filepath, region):
+def _my_iterator(filepath, fluo_filepath, region, last_time):
     """Generates an iterator over the stack of images to use for
     multiprocessing."""
 
-    tran_meta = im.get_metadata(filepath)
-
-    try:
-        times = int(tran_meta['time'])
-        z = int(tran_meta['z'])
-    except KeyError:
-        times = int(tran_meta['frames'])
-        z = int(tran_meta['slices'])
-
-    keys = np.arange(times * z).reshape(times, z)
+    keys = im.get_keys(filepath, last_time)
 
     for ndx, (key) in enumerate(keys):
         yield ndx, key, filepath, fluo_filepath, region
