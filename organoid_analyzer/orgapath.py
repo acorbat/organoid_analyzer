@@ -11,6 +11,8 @@ from skimage.viewer import ImageViewer
 from skimage.viewer.canvastools import RectangleTool
 from skimage.viewer.plugins.base import Plugin
 
+from . import visvis as vv
+
 
 def scan_folder(folder):
     """Iterator yielding every pair of transmission and yfp stacks in folder."""
@@ -187,8 +189,6 @@ def load_mp_image(filenames, dcrop=None):
             try:
                 with Timer() as t:
                     original = io.imread(filename)
-                    # flattening first dimensions
-                    original = original.reshape(-1, *original.shape[-2:])
                     image = np.min(original, axis=0)
                     image = (image - np.min(image)) / \
                             (np.max(image) - np.min(image))
@@ -227,6 +227,13 @@ def add_crop_to_yaml(filename, crop_filename=None):
             
             else:
                 image = image_or_crop
+                # Perform time crop
+                chosen_t = vv.visualizer(image)
+                print(chosen_t)
+
+                # Perform rectangle crop
+                # flattening first dimensions
+                image = image.reshape(-1, *image.shape[-2:])
                 viewer = ImageViewer(image)
                 rect_tool = RectangleTool(viewer)
                 viewer.show()
