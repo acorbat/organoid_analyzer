@@ -679,10 +679,10 @@ def segment_timepoint(tran, fluo, region):
 
     results = {'z': [], 'initial_snake': [], 'external_snake': []}
     for z, tran_z in enumerate(tran):
-        e_snk = find_external(tran, init_snake, mult=-1)
+        e_snk = find_external(tran_z, init_snake, mult=-1)
         # i_snk, _ = find_internal(tran, e_snk)
         # l_snk = find_external(fluo, init_snake, mult=1)
-        mask = snake_to_mask(e_snk, tran.shape)
+        mask = snake_to_mask(e_snk, tran_z.shape)
         labeled = morphology.label(mask)
         if (labeled == 0).all():  # I am not sure this is still necessary
             e_snk = find_external(tran, init_snake, mult=-1, gamma=0.1)
