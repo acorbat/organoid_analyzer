@@ -264,7 +264,7 @@ def add_crop_to_yaml(filename, crop_filename=None):
 
                 v['time_crop'] = chosen_t
 
-            dinput[k] = v
+            dout[k] = v
 
     except KeyboardInterrupt:
         pass
@@ -272,7 +272,7 @@ def add_crop_to_yaml(filename, crop_filename=None):
     # Manage Rectangle crops
     try:
         for ndx, (k, image_or_crop) in \
-                enumerate(ibuffer(10, load_mp_image(dinput.keys(), dcrop))):
+                enumerate(ibuffer(10, load_mp_image(dinput.keys(), dout))):
             print('%d/%d: %s' % (ndx, len(dinput), k))
             v = dinput[k]
 
