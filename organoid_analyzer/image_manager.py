@@ -208,5 +208,6 @@ def get_keys(filepath, last_time=None):
 def load_stack(filepath, last_time=None):
     keys = get_keys(filepath, last_time=last_time)
     stack = tif.TiffFile(str(filepath)).asarray(key=keys.flatten())
+    stack = stack.reshape(*keys.shape, *stack.shape[-2:])
 
     return stack
