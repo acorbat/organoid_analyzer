@@ -80,8 +80,10 @@ def mask_organoids(img, region, min_organoid_size=1000):
     mask[:, :int(xmin)] = 0
     mask[:, int(xmax):] = 0
 
+
+    mask = morphology.binary_dilation(mask, selem=morphology.disk(10))
     mask = morphology.remove_small_holes(mask, area_threshold=min_organoid_size)
-    mask = morphology.remove_small_objects(mask, min_size=min_organoid_size)
+    mask = morphology.remove_small_objects(mask, min_size=min_organoid_size*10)
 
     return mask, processed_image
 
