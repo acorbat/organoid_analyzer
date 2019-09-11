@@ -8,6 +8,11 @@ from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
 from mahotas.features import haralick
 
+import statistics
+from statistics import mode
+import scipy.stats as st
+from collections import Counter
+
 from img_manager import tifffile as tif
 
 active_contour = segmentation.active_contour
@@ -618,6 +623,120 @@ def generate_description(snake, img):
     description.update(get_texture_description(img, snake))
 
     return description
+
+
+def best_haralick(z, harals, ax=None):
+    """Fits the harals value from a single Haralick Moment and returns the best
+    z found.
+
+    Parameters
+    ----------
+    z : numpy.array
+        1D Array of z values for the Haralick Features
+    harals : numpy.array
+        1D Array of the Haralick Features
+    ax : matplotlib.Axes (optional, default=None)
+        If given, a plot of values and fit is done
+
+    Returns
+    -------
+    tuple
+        (best z value, best Haralick estimation)
+    """
+    z = z.astype(float)
+    p = np.polyfit(z, harals, 2)
+    poly = np.poly1d(p)
+
+    x_ver = -p[1] / (2 * p[0])
+    y_ver = poly(x_ver)
+    if ax:
+        ax.plot(z, harals, 'o')
+        zs = np.arange(min(z) * 0.9, max(z) * 1.1, (max(z) - min(z)) / 30)
+        poly = np.poly1d(p)
+        ax.plot(zs, poly(zs))
+        ax.scatter(x_ver, y_ver, color='r')
+
+    return x_ver, y_ver
+
+
+def best_z_plane(z_bests, z_min=0, z_max=6, z_best_prev=3):
+    """Finds the best z_plane by voting between the result of each Haralick
+    Feature. If it is a timelapse, z_best_prev can be used to untie a draw.
+
+    Parameters
+    ----------
+    z_bests : list, tuple, numpy.array
+        List of values of best z given by Haralick Features.
+    z_min : float, int (optional, default=0)
+        minimum possible value of z
+    z_max : float, int (optional, default=6)
+        maximum possible value of z
+    z_best_prev : int, float (optional, default=3)
+        Previous best z plane to untia a draw
+
+    Returns
+    -------
+    best z value
+    """
+    z_bests = [np.nan if this < z_min else np.nan if this > z_max else this
+               for this in z_bests]
+    rounded = filter(np.isfinite, z_bests)
+    rounded = [round(this[0]) for this in rounded]
+    rounded = np.asarray(rounded)
+
+    try:
+        z_best = mode(rounded)
+
+    except statistics.StatisticsError:
+        ind = np.argmin(abs(rounded - z_best_prev))
+        z_best = rounded[ind]
+
+    return z_best
+
+
+def best_hu(z, hu_matrix, ax=None, z_best_prev=0):
+    """Finds the best Hu Moments from a list of them got from different
+    z-stacks. It uses the highest Hu Moments to discard every plane with high
+    fluctuations and returns the plane that has less high fluctuations in every
+    z plane.
+
+    Parameters
+    ----------
+    z : list, tuple, numpy.array
+        list of z planes given
+    hu_matrix : numpy.array 2D
+        Matrix containing each Hu moment for each z plane (z, Hu Moments)
+    ax : matplotlib.Axes (optional, default=None)
+        If given, a plot is returned showing the contest between planes
+    z_best_prev : int, float (optional, default=0)
+        Best z plane found in previous stack to untie a possible draw
+
+    Returns
+    -------
+    tuple
+        best z plane, list of Hu Moments of this plane
+    """
+    best_zs = []
+    for i in range(3, 7):
+        hus = hu_matrix[:, i]
+
+        hus = st.zscore(hus)
+        best_z = np.argmin(abs(hus))
+        best_zs.append(z[best_z])
+
+    best_zs = np.asarray(best_zs)
+    try:
+        best = mode(best_zs)
+    except statistics.StatisticsError:
+        ind = np.argmin(abs(best_zs - z_best_prev))
+        best = best_zs[ind]
+
+    if ax:
+        ax.scatter(np.arange(3, 7), best_zs)
+        ax.axhline(y=best)
+        ax.set_title('best z: %s' % best)
+
+    return best, hu_matrix[best, :]
 
 
 def protocol(stack, region):
