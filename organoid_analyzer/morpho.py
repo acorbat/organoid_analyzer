@@ -681,7 +681,7 @@ def best_z_plane(z_bests, z_min=0, z_max=6, z_best_prev=3):
     z_bests = [np.nan if this < z_min else np.nan if this > z_max else this
                for this in z_bests]
     rounded = filter(np.isfinite, z_bests)
-    rounded = [round(this[0]) for this in rounded]
+    rounded = [round(this) for this in rounded]
     rounded = np.asarray(rounded)
 
     try:

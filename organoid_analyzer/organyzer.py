@@ -229,7 +229,7 @@ class Organyzer(object):
             self.df['haralick_' + str(num) + '_best'] = np.nan
             self.df['z_best_haralick_' + str(num)] = np.nan
             self.df['focus_plane'] = False
-            self.df['best_hu_moments'] = [np.nan]
+            self.df['best_hu_moments'] = [[np.nan] * 7] * len(self.df)
 
         z_prev = 3
         z_hu = 0
