@@ -223,6 +223,55 @@ class Organyzer(object):
             self.df = all_df.copy()
         self.save_results()
 
+    def describe_better(self):
+
+        for num in range(1, 14):
+            self.df['haralick_' + str(num) + '_best'] = np.nan
+            self.df['z_best_haralick_' + str(num)] = np.nan
+            self.df['focus_plane'] = False
+            self.df['best_hu_moments'] = [[np.nan] * 7] * len(self.df)
+
+        z_prev = 3
+        z_hu = 0
+        for params, this_df in self.df.groupby(['tran_path', 'timepoint']):
+            print('For File %s polishing timepoint %s' % params)
+
+            z = this_df.z.values
+
+            # Best Haralick Features
+
+            z_bests = []
+            for num in range(1, 14):
+                hara = this_df['haralick_' + str(num)].values
+                z_best, hara_best = morpho.best_haralick(z, hara)
+
+                z_bests.append(z_best)
+                for i in this_df.index:
+                    self.df.at[i, 'z_best_haralick_' + str(num)] = z_best
+                    self.df.at[i, 'haralick_' + str(num) + '_best'] = hara_best
+
+            # Best Focus Plane
+
+            focus_plane = morpho.best_z_plane(z_bests,
+                                              z_min=min(z), z_max=max(z),
+                                              z_best_prev=z_prev)
+            z_prev = focus_plane
+
+            ind = this_df.index[this_df['z'] == focus_plane]
+            # TODO: assert index exists
+            self.df.at[ind, 'focus_plane'] = True
+
+            # Hu Moments
+            hu_matrix = np.stack(this_df.moments_hu.values)
+
+            z_hu, hus = morpho.best_hu(z, hu_matrix, z_best_prev=z_hu)
+
+            for i in this_df.index:
+                self.df.at[i, 'best_hu_moments'] = hus
+
+        self.save_results()
+
+
 
 def _my_iterator(filepath, fluo_filepath, region, last_time):
     """Generates an iterator over the stack of images to use for
