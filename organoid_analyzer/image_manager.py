@@ -200,7 +200,7 @@ def get_keys(filepath, last_time=None):
         z = int(tran_meta['slices'])
 
     if last_time:
-        times = last_time
+        times = last_time + 1
 
     return np.arange(times * z).reshape(times, z)
 

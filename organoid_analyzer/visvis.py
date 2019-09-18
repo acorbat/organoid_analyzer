@@ -1,5 +1,11 @@
+import numpy as np
+import imageio
+
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 from matplotlib.widgets import RectangleSelector, Button
+from matplotlib.colors import ListedColormap
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 from . import morpho
 
@@ -169,3 +175,127 @@ class Index(object):
         self.subplot.t = self.cur_t
         self.subplot.update()
 
+
+# Classifier plots
+
+
+def plot_class_map(df, clf, ax):
+    """Generates the classification map for the region contained in the df
+    given, using the clf classifier.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame containing all the points that are to be plotted
+    clf : classifier.CLassifier
+        Trained classifier to generate the map
+    ax : matplotlib.Axes
+        Axes on which to plot
+    """
+    X = np.asarray(df[clf.cols])
+
+    # Create color maps
+    cmap_light = ListedColormap(['#FFAAAA', '#AAAAFF', '#AAFFAA'])
+    cmap_bold = ListedColormap(['#FF0000', '#0000FF', '#00FF00'])
+
+    # Plot the decision boundary. For that, we will assign a color to each
+    # point in the mesh [x_min, x_max]x[y_min, y_max].
+    x_min, x_max = X[:, 0].min(), X[:, 0].max()
+    y_min, y_max = X[:, 1].min(), X[:, 1].max()
+    xx, yy = np.meshgrid(np.linspace(x_min*.95, x_max*1.05, 100),
+                         np.linspace(y_min*.95, y_max*1.05, 100))
+    Z = clf.clf.predict(np.c_[xx.ravel(), yy.ravel()])
+    # TODO: Should be made more general, for more classes
+    Z = np.asarray(
+        [1 if this == 'spherical' else 2 if this == 'normal' else 3 for this
+         in Z])
+    Z = Z.reshape(xx.shape)
+
+    ax.pcolormesh(xx, yy, Z, cmap=cmap_light, vmin=1, vmax=3)
+
+    ax.set_xlim((x_min, x_max))
+    ax.set_ylim((y_min, y_max))
+    ax.set_xlabel(clf.cols[0].replace('_', ' '))
+    ax.set_ylabel(clf.cols[1].replace('_', ' '))
+
+
+def plot_trajectory(X, ints, ax):
+    """Plots the trajectory of X with it's intensity ints on axis ax.
+
+    Parameters
+    ----------
+    X : numpy.array (2D)
+        Array containing the (x, y) positions of the trajectory
+    ints : list, tuple, numpy.array (1D)
+        Sequence of intensities of points of the trajectory
+    ax : matplotlib.Axes
+        Axes on which to make the plot
+    """
+    ax.plot(X[:, 0], X[:, 1], '#1f77b4', alpha=0.7)
+    ss = [50] * len(ints)
+    ss[-1] = 100
+    ax.scatter(X[:, 0], X[:, 1], c=ints, s=ss, alpha=0.7, cmap='inferno')
+
+
+def get_array_from_fig(fig):
+    """Get's an array of the image to create a gif afterwards.
+
+    Parameters
+    ----------
+    fig : matplotlib.Figure
+
+    Returns
+    -------
+    numpy.array (Nx, Ny, 4) RGBH array of image
+    """
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+
+    s, (width, height) = canvas.print_to_buffer()
+
+    return np.fromstring(s, np.uint8).reshape((height, width, 4))
+
+
+def make_gif(stacks, df, clf, save_dir):
+    """Creates a gif at save_dir according to clf classification and using
+    information at df alongside the stacks.
+
+    Parameters
+    ----------
+    stacks : numpy.array (T, Nx, Ny)
+        Time series of stacks to be displayed
+    df : pandas.DataFrame
+        DataFrame containing the information of everything to be plotted
+    clf : classifier.Classifier
+        Trained classifier to plot the map
+    save_dir : path
+        Path to where the gif is to be saved
+    """
+    if len(stacks) != len(df):
+        raise ValueError('Stacks and DataFrame should be the same length')
+    X = np.asarray(df[clf.cols])
+    ints = np.asarray(df['fluo_estimation'])
+
+    images = []
+
+    for n in range(len(stacks)):
+        fig = Figure(figsize=(15, 5), frameon=False)
+
+        # Add and plot stack image
+
+        ax = fig.add_subplot(121)
+        ax.axis('off')
+
+        ax.imshow(stacks[n], cmap='Greys_r')
+
+        # Add and plot trajectory
+
+        ax = fig.add_subplot(122)
+
+        plot_class_map(df, clf, ax)
+        plot_trajectory(X[:n+1], ints[:n+1], ax)
+
+        img = get_array_from_fig(fig)
+        images.append(img)
+
+    imageio.mimsave(str(save_dir), images, fps=2)
