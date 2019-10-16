@@ -125,7 +125,7 @@ class SubPlot(object):
 
         plt.sca(self.axs)
 
-        self.img = self.axs.imshow(self.stack[self.t][self.z])
+        self.img = self.axs.imshow(self.stack[self.t][self.z], cmap='Greys_r')
 
         self.set_title()
         plt.draw()
