@@ -135,6 +135,8 @@ class Organyzer(object):
             region = self.file_dict[file]['crop']
             last_time = self.file_dict[file].get('time_crop')
 
+            file, fluo_file = self._check_path((file , fluo_file))
+
             print('Analyzing file: %s' % file)
 
             if self.df is not None and file in self.df.tran_path.values:
@@ -271,6 +273,36 @@ class Organyzer(object):
 
         self.save_results()
 
+    def _check_path(self, paths):
+        """Checks whether the given paths are in the same filepath as the yaml
+        dictionary. If they're not, then the path is corrected.
+
+        Parameters
+        ----------
+        paths : list, tuple, string, pathlib.Path
+            Path to check if parent is shared
+
+        Returns
+        -------
+        new_paths : list of paths or pathlib.Path
+            Paths changed according to filepath of dictionary
+        """
+        if isinstance(paths, (list, tuple, np.ndarray)):
+            new_paths = []
+            for path in paths:
+                new_path = self._check_path(path)
+                new_paths.append(new_path)
+
+        else:
+            paths = pathlib.Path(paths)
+            actual_parent = self.filepath_yaml_crop.parent
+            path_parent = paths.parent
+            if actual_parent != path_parent:
+                new_paths = actual_parent.joinpath(paths.name)
+            else:
+                new_paths = paths
+
+        return new_paths
 
 
 def _my_iterator(filepath, fluo_filepath, region, last_time):
