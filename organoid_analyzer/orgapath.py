@@ -247,7 +247,7 @@ def add_crop_to_yaml(filename, crop_filename=None):
     # Manage Time crops
     try:
         for ndx, (k, image_or_crop) in \
-                enumerate(load_stack(dinput.keys(), dcrop)):
+                enumerate(ibuffer(2, load_stack(dinput.keys(), dcrop))):
             print('%d/%d: %s' % (ndx, len(dinput), k))
             v = dinput[k]
 
