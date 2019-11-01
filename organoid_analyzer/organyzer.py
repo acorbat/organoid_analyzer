@@ -33,6 +33,7 @@ class Organyzer(object):
         self.output_path = self.output_path.joinpath(self.output_name
                                                      + '.pandas')
         if self.output_path.exists():
+            print('Loading previous DataFrame: %s' % str(self.output_path))
             self.df = self.load_pandas()
 
             if self.overwrite:
@@ -135,11 +136,11 @@ class Organyzer(object):
             region = self.file_dict[file]['crop']
             last_time = self.file_dict[file].get('time_crop')
 
-            file, fluo_file = self._check_path((file , fluo_file))
+            file, fluo_file = self._check_path((file, fluo_file))
 
             print('Analyzing file: %s' % file)
 
-            if self.df is not None and file in self.df.tran_path.values:
+            if self.df is not None and str(file) in self.df.tran_path.values:
                 print('%s has already been analyzed' % file)
                 continue
 
