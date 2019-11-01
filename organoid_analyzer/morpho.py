@@ -18,7 +18,7 @@ from img_manager import tifffile as tif
 active_contour = segmentation.active_contour
 
 
-def mask_organoids(img, region, min_organoid_size=1000):
+def mask_organoids(img, region, min_organoid_size=2500):
     """Processes transmission image in order to find organoids. It performs:
     1. Rescaling of intensity to float.
     2. inversion of intensities.
@@ -120,7 +120,8 @@ def get_init_snake(mask, region):
      borders of the mask."""
     mask = morphology.binary_dilation(mask, selem=morphology.disk(3))
     distance = ndi.distance_transform_edt(~mask)
-    init_snake = find_external(distance, region, mult=-10, gamma=0.001)
+    distance += mask * 1000
+    init_snake = find_external(distance, region, mult=-100, gamma=0.001)
     return init_snake
 
 
@@ -152,7 +153,7 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
     
     im = filters.gaussian(img, 5)
     snake = active_contour(im,
-                           init_snake, alpha=0.015, beta=0.1, gamma=gamma*10,
+                           init_snake, alpha=0.015, beta=0.01, gamma=gamma*10,
                            w_line=mult*0.1, w_edge=10)
             
     # im = filters.gaussian(img, 2)
@@ -162,9 +163,9 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
     # w_line=0, w_edge=1, gamma=0.01,
     # bc='periodic', max_px_move=1.0,
     # max_iterations=2500, convergence=0.1
-    snake = active_contour(im,
-                           snake, alpha=0.015, beta=0.01, gamma=gamma*100,
-                           w_line=mult*0.1, w_edge=5)
+    # snake = active_contour(im,
+    #                        snake, alpha=0.015, beta=0.01, gamma=gamma*100,
+    #                        w_line=mult*0.1, w_edge=5)
     return snake
 
 
@@ -883,8 +884,8 @@ def timepoint_to_df(params):
             else:
                 df[prop] = description[prop]
 
-        df['tran_path'] = filepath
-        df['fluo_path'] = fluo_filepath
+        df['tran_path'] = str(filepath)
+        df['fluo_path'] = str(fluo_filepath)
         df['crop'] = [region]
         df['timepoint'] = ndx
 
