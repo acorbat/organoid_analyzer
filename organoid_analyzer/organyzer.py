@@ -6,7 +6,7 @@ import numpy as np
 
 from organoid_analyzer import orgapath as op
 from organoid_analyzer import morpho
-
+from organoid_analyzer import image_manager as im
 
 class Organyzer(object):
 
@@ -81,7 +81,6 @@ class Organyzer(object):
                 self.filepath_yaml.with_name(self.filepath_yaml.stem +
                                              '_crop.yaml')
 
-
         elif 'crop' in filepath.stem:
             print('I am going to analyze already cropped stacks from this '
                   'file: ' + str(filepath))
@@ -134,6 +133,9 @@ class Organyzer(object):
         for file in self.file_dict.keys():
             fluo_file = self.file_dict[file]['yfp']
             region = self.file_dict[file]['crop']
+            last_time = self.file_dict[file].get('time_crop')
+
+            file, fluo_file = self._check_path((file , fluo_file))
 
             print('Analyzing file: %s' % file)
 
@@ -141,7 +143,8 @@ class Organyzer(object):
                 print('%s has already been analyzed' % file)
                 continue
 
-            this_file_res = self._analyze_file(file, fluo_file, region)
+            this_file_res = self._analyze_file(file, fluo_file,
+                                               region, last_time)
 
             print('Saving file: %s' % file)
 
@@ -153,7 +156,7 @@ class Organyzer(object):
                 self.df = this_df.copy()
             self.save_results()
 
-    def _analyze_file(self, filepath, fluo_filepath, region):
+    def _analyze_file(self, filepath, fluo_filepath, region, last_time):
         """Multiprocesses the analysis over a complete stack.
 
             Parameters
@@ -164,75 +167,27 @@ class Organyzer(object):
                 path to the fluorescence stack
             region : list, tuple
                 coordinates of the cropped region
+            last_time : int, None
+                Length of stack to be considered. If None, the complete length
+                is considered
 
             Returns
             -------
             df : pandas DataFrame
                 DataFrame containing all the results from the analysis"""
 
-        tran_stack = morpho.skio.imread(filepath)
-        fluo_stack = morpho.skio.imread(fluo_filepath)
-
-        print('I am going to analyze %s timepoints.' % (len(tran_stack)))
-
         with multiprocessing.Pool(self.workers) as p:
             file_results = []
-            for this_df in p.imap_unordered(self.timepoint_to_df,
-                                            self._my_iterator(tran_stack,
-                                                              fluo_stack,
-                                                              filepath,
-                                                              fluo_filepath,
-                                                              region)):
+            for this_df in p.imap_unordered(morpho.timepoint_to_df,
+                                            _my_iterator(filepath,
+                                                         fluo_filepath,
+                                                         region,
+                                                         last_time)):
                 file_results.append(this_df)
 
         df = pd.concat(file_results, ignore_index=True)
         df.sort_values('timepoint', inplace=True)
         df.reset_index(drop=True, inplace=True)
-
-        return df
-
-    def _my_iterator(self, tran_stack, fluo_stack,
-                     filepath, fluo_filepath, region):
-        """Generates an iterator over the stack of images to use for
-        multiprocessing."""
-        for ndx, (tran0, fluo0) in enumerate(zip(tran_stack, fluo_stack)):
-            yield ndx, tran0, fluo0, filepath, fluo_filepath, region
-
-    def timepoint_to_df(self, params):
-        """Analyzes a single timepoint and generates a small pandas DataFrame.
-
-        Parameters
-        ----------
-        params : list
-            ndx, tran, fluo, region, filepath, fluo_filepath
-
-        Returns
-        -------
-        df : pandas DataFrame
-            Small DataFrame with the results of a single timepoint analysis."""
-
-        ndx, tran, fluo, filepath, fluo_filepath, region = params
-
-        print('analyzing timepoint %s from file %s' % (ndx, filepath))
-
-        to_save = morpho.segment_timepoint(tran, fluo, region)
-        mask = morpho.snake_to_mask(to_save['external_snakes'][0], tran.shape)
-        description = morpho.get_description(mask)
-        description.update(morpho.get_texture_description(
-            tran, to_save['external_snakes'][0]))
-
-        df = pd.DataFrame(to_save)
-
-        for prop in description.keys():
-            if isinstance(description[prop], (tuple, list, np.ndarray)):
-                df[prop] = [description[prop]]
-            else:
-                df[prop] = description[prop]
-
-        df['tran_path'] = filepath
-        df['fluo_path'] = fluo_filepath
-        df['crop'] = [region]
-        df['timepoint'] = ndx
 
         return df
 
@@ -269,3 +224,92 @@ class Organyzer(object):
         else:
             self.df = all_df.copy()
         self.save_results()
+
+    def describe_better(self):
+
+        for num in range(1, 14):
+            self.df['haralick_' + str(num) + '_best'] = np.nan
+            self.df['z_best_haralick_' + str(num)] = np.nan
+            self.df['focus_plane'] = False
+            self.df['best_hu_moments'] = [[np.nan] * 7] * len(self.df)
+
+        z_prev = 3
+        z_hu = 0
+        for params, this_df in self.df.groupby(['tran_path', 'timepoint']):
+            print('For File %s polishing timepoint %s' % params)
+
+            z = this_df.z.values
+
+            # Best Haralick Features
+
+            z_bests = []
+            for num in range(1, 14):
+                hara = this_df['haralick_' + str(num)].values
+                z_best, hara_best = morpho.best_haralick(z, hara)
+
+                z_bests.append(z_best)
+                for i in this_df.index:
+                    self.df.at[i, 'z_best_haralick_' + str(num)] = z_best
+                    self.df.at[i, 'haralick_' + str(num) + '_best'] = hara_best
+
+            # Best Focus Plane
+
+            focus_plane = morpho.best_z_plane(z_bests,
+                                              z_min=min(z), z_max=max(z),
+                                              z_best_prev=z_prev)
+            z_prev = focus_plane
+
+            ind = this_df.index[this_df['z'] == focus_plane]
+            # TODO: assert index exists
+            self.df.at[ind, 'focus_plane'] = True
+
+            # Hu Moments
+            hu_matrix = np.stack(this_df.moments_hu.values)
+
+            z_hu, hus = morpho.best_hu(z, hu_matrix, z_best_prev=z_hu)
+
+            for i in this_df.index:
+                self.df.at[i, 'best_hu_moments'] = hus
+
+        self.save_results()
+
+    def _check_path(self, paths):
+        """Checks whether the given paths are in the same filepath as the yaml
+        dictionary. If they're not, then the path is corrected.
+
+        Parameters
+        ----------
+        paths : list, tuple, string, pathlib.Path
+            Path to check if parent is shared
+
+        Returns
+        -------
+        new_paths : list of paths or pathlib.Path
+            Paths changed according to filepath of dictionary
+        """
+        if isinstance(paths, (list, tuple, np.ndarray)):
+            new_paths = []
+            for path in paths:
+                new_path = self._check_path(path)
+                new_paths.append(new_path)
+
+        else:
+            paths = pathlib.Path(paths)
+            actual_parent = self.filepath_yaml_crop.parent
+            path_parent = paths.parent
+            if actual_parent != path_parent:
+                new_paths = actual_parent.joinpath(paths.name)
+            else:
+                new_paths = paths
+
+        return new_paths
+
+
+def _my_iterator(filepath, fluo_filepath, region, last_time):
+    """Generates an iterator over the stack of images to use for
+    multiprocessing."""
+
+    keys = im.get_keys(filepath, last_time)
+
+    for ndx, (key) in enumerate(keys):
+        yield ndx, key, filepath, fluo_filepath, region

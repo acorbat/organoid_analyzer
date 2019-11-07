@@ -30,34 +30,11 @@ class ImageOrganyzer(object):
         folder_numbers = sorted(folder_numbers)
         folders = [folders[ind] for ind in folder_numbers]
 
+        print("I will concatenate files found in the following folders:")
+        for folder in folders:
+            print(folder)
+
         return folders
-
-    def get_metadata(self, filepath):
-        with open(str(filepath), 'rb') as file:
-            metadata = []
-            append_it = False
-            for row in file:
-                try:
-                    this_r = row.decode("utf-8")
-
-                    if "Band" in this_r:
-                        append_it = True
-                    if append_it and "=" in this_r:
-                        metadata.append(this_r)
-                    if 'TimePos' in this_r:
-                        append_it = False
-
-                except:
-                    pass
-        meta_dict = {val.split('=')[0]: val.split('=')[1].replace('\n', '') for
-                     val in metadata}
-        for key, val in meta_dict.items():
-            try:
-                meta_dict[key] = float(val)
-            except:
-                pass
-
-        return meta_dict
 
     def save_img(self, save_path, stack, axes='YX', create_dir=False,
                  metadata=None):
@@ -100,12 +77,16 @@ class ImageOrganyzer(object):
 
             for folder in self.inner_folders:
                 this_other_file = folder.joinpath(this_file_name)
+
+                print('with ' + str(this_other_file))
+
                 if not this_other_file.exists():
+                    print("file not found")
                     continue
 
-                metadata = self.get_metadata(str(this_file))
+                metadata = get_metadata(str(this_other_file))
                 metadatas.append(metadata)
-                this_img_file = tif.TiffFile(str(this_file))
+                this_img_file = tif.TiffFile(str(this_other_file))
 
                 times.append(int(metadata['Time']))
                 zetas.append(int(metadata['Z']))
@@ -175,51 +156,58 @@ class ImageOrganyzer(object):
         df_regions.to_csv(str(save_path.joinpath('regions.csv')))
 
 
-class Stack(object):
+def get_metadata(filepath):
+    img = tif.TiffFile(str(filepath))
+    if img.is_imagej:
+        meta_dict = img.imagej_metadata
 
-    def __init__(self, path_to_tran):
-        self.paths = self.get_paths(path_to_tran)
-        self.traslation = {'tran': (0, 0),
-                           'fluo': (-3, -14),
-                           'auto': (-3, -12)}
+    else:
+        with open(str(filepath), 'rb') as file:
+            metadata = []
+            append_it = False
+            for row in file:
+                try:
+                    this_r = row.decode("utf-8")
 
-    def get_paths(self, path, channels=None):
-        """Generates a dictionary with the suppossed paths to the other channels
-        and keys are channel names."""
-        path = pathlib.Path(path)
-        if channels is None:
-            channels = {'tran': 'TRAN',
-                        'fluo': 'YFP',
-                        'auto': 'RFP'}
+                    if "Band" in this_r:
+                        append_it = True
+                    if append_it and "=" in this_r:
+                        metadata.append(this_r)
+                    if 'TimePos' in this_r:
+                        append_it = False
 
-        path_dict = {key: path.with_name(path.name.replace('TRAN', val))
-                     for key, val in channels.items()}
+                except:
+                    pass
+        meta_dict = {val.split('=')[0]: val.split('=')[1].replace('\n', '') for
+                     val in metadata}
+        for key, val in meta_dict.items():
+            try:
+                meta_dict[key] = float(val)
+            except:
+                pass
 
-        return path_dict
+    return meta_dict
 
-    def shift_image(self, img, shift_xy):
-        """Shifts image according to shift_xy. Border values are repeated."""
-        tform = transform.EuclideanTransform(translation=shift_xy, mode='edge')
-        img = util.img_as_float(img)
-        shifted_img = transform.warp(img, tform)
 
-        return shifted_img
+def get_keys(filepath, last_time=None):
+    tran_meta = get_metadata(filepath)
 
-    def threshold_img(self, img, mult=.95):
-        """Performs Otsu thresholding and returns an image with the foreground
-        replaced by nans. mult parameter is a multiplication for otsu's
-        threshold."""
-        threshold = filters.threshold_otsu(img)
-        new_img = np.zeros_like(img)
-        new_img[img < mult * threshold] = img[img < mult * threshold]
+    try:
+        times = int(tran_meta['time'])
+        z = int(tran_meta['z'])
+    except KeyError:
+        times = int(tran_meta['frames'])
+        z = int(tran_meta['slices'])
 
-        return new_img
+    if last_time:
+        times = last_time + 1
 
-    def correct_bkg(self, img):
-        """Replaces foreground by nans, and calculates the background as the
-        median of the rest. This is later subtratced from the image which is
-        clipped as well between 0 and infinite."""
-        bkg_img = self.threshold_img(img, mult=1)
-        bkg = np.median(bkg_img[np.nonzero(bkg_img)])
-        new_img = np.clip(img - bkg, 0, np.inf)
-        return new_img
+    return np.arange(times * z).reshape(times, z)
+
+
+def load_stack(filepath, last_time=None):
+    keys = get_keys(filepath, last_time=last_time)
+    stack = tif.TiffFile(str(filepath)).asarray(key=keys.flatten())
+    stack = stack.reshape(*keys.shape, *stack.shape[-2:])
+
+    return stack

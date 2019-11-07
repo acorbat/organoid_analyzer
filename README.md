@@ -13,6 +13,27 @@ The following script will load the file dictionary (or create it if missing), sh
     org = organyzer.Organyzer('path/to/folder', 'name_to_save')
     org.crop()
     org.analyze()
+   
+   
+# ImageOrganyzer
+
+**(Class) ImageOrganyzer(folder):** On creation, it receives a filepath to the folder containing subfolders that share the same name but ending with the number corresponding to how they were acquired (i.e. date_001). If there is a "regions" folder it is used to create PA images and a csv file.
+
+## Usage
+*(method) concatenate_and_reshape:* Gets the ordered list of folders, loads the images inside them and concatenates and reshapes them according to metadata. These are saved in a folder at the same location with the "_concatenated" appended.
+
+*(method) plot_and_save_photoactivation:* Looks into the regions folder at location and plots the selected photoactivation region, as well as saving a csv file with the selected regions.
+
+The following script will generate the concatenated files from the subfolders in path/to/folder and generate the photoactivation images and csv file if a regions folder exists.
+
+    from organoid_analyzer import image_manager as man
+    
+    manager = man.ImageOrganyzer('path/to/folder')
+
+    manager.concatenate_and_reshape()
+
+    if manager.regions_paths.exists():
+        manager.plot_and_save_photoactivation()
 
 
 # Orgapath
