@@ -794,22 +794,28 @@ def segment_timepoint(tran, fluo, region):
         raise ValueError('Dimension of timepoint is neither 2 or 3.')
 
     mask, processed_image = mask_organoids(tran, region)
-    init_snake = get_init_snake(mask, region)
+    mask = ndi.morphology.binary_fill_holes(mask)
+    # init_snake = get_init_snake(mask, region)
 
-    results = {'z': [], 'initial_snake': [], 'external_snake': []}
+    results = {'z': [], 'external_snake': []}
     for z, tran_z in enumerate(tran):
-        e_snk = find_external(tran_z, init_snake, mult=-1)
-        # i_snk, _ = find_internal(tran, e_snk)
-        # l_snk = find_external(fluo, init_snake, mult=1)
-        mask = snake_to_mask(e_snk, tran_z.shape)
-        labeled = morphology.label(mask)
-        if (labeled == 0).all():  # I am not sure this is still necessary
-            e_snk = find_external(tran, init_snake, mult=-1, gamma=0.1)
+        this_tran = util.img_as_float(tran_z)
+        segmented = segmentation.morphological_chan_vese(this_tran,
+                                                         10,
+                                                         init_level_set=mask,
+                                                         smoothing=4,
+                                                         lambda2=2)
+
+        max_area = 0
+        label = 1
+        for region in measure.regionprops(measure.label(segmented)):
+            if region.area > max_area:
+                label = region.label
+        
+        e_snk = mask_to_snake(segmented == label)
 
         results['z'].append([z])
-        results['initial_snake'].append([init_snake])
         results['external_snake'].append([e_snk])
-    # 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
 
     return results
 
