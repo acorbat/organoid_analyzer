@@ -85,8 +85,9 @@ def mask_organoids(img, region, min_organoid_size=1000):
     mask[:, :int(xmin)] = 0
     mask[:, int(xmax):] = 0
 
-    mask = morphology.remove_small_holes(mask, area_threshold=min_organoid_size)
+    mask = morphology.binary_closing(mask, selem=morphology.disk(15))
     mask = morphology.remove_small_objects(mask, min_size=min_organoid_size)
+    mask = ndi.morphology.binary_fill_holes(mask)
 
     return mask, processed_image
 
@@ -587,10 +588,11 @@ def get_description(mask, descriptors=None):
                        'major_axis_length', 'minor_axis_length', 'moments_hu',
                        'perimeter', 'solidity', ]
     description = {}
-    for region in measure.regionprops(mask):
+    for region in measure.regionprops(measure.label(mask)):
         for prop in descriptors:
             description[prop] = region[prop]
         return description
+    return description  #sometimes there is no region
 
 
 def get_texture_description(img, snake):
@@ -619,7 +621,7 @@ def generate_description(snake, img):
     """Generates a dictionary with the descriptors of the snake and image
     provided."""
     mask = snake_to_mask(snake, img.shape)
-    description = get_description(mask)
+    description = get_description(snake)
     description.update(get_texture_description(img, snake))
 
     return description
@@ -794,24 +796,43 @@ def segment_timepoint(tran, fluo, region):
         raise ValueError('Dimension of timepoint is neither 2 or 3.')
 
     mask, processed_image = mask_organoids(tran, region)
-    mask = ndi.morphology.binary_fill_holes(mask)
+
+    if not mask.any():
+        print('no initial mask')
     # init_snake = get_init_snake(mask, region)
 
     results = {'z': [], 'external_snake': []}
     for z, tran_z in enumerate(tran):
         this_tran = util.img_as_float(tran_z)
         segmented = segmentation.morphological_chan_vese(this_tran,
-                                                         10,
+                                                         20,
                                                          init_level_set=mask,
                                                          smoothing=4,
                                                          lambda2=2)
+        if not segmented.any():
+            print('no segmented mask')
 
+        segmented = morphology.binary_closing(segmented,
+                                              selem=morphology.disk(10))
+        segmented = ndi.morphology.binary_fill_holes(segmented)
+        labeled = measure.label(segmented)
         max_area = 0
         label = 1
-        for region in measure.regionprops(measure.label(segmented)):
+        solidity = 0
+        for region in measure.regionprops(labeled):
             if region.area > max_area:
+                max_area = region.area
                 label = region.label
-        
+                solidity = region.solidity
+
+        if solidity < 0.5:
+            segmented = segmentation.morphological_chan_vese(this_tran,
+                                                             20,
+                                                             init_level_set=labeled == label,
+                                                             smoothing=4,
+                                                             lambda2=2)
+
+        e_snk = ndi.morphology.binary_fill_holes(labeled == label)
         e_snk = mask_to_snake(segmented == label)
 
         results['z'].append([z])
