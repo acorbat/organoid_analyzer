@@ -266,9 +266,12 @@ def mask_to_snake(mask):
 
 
 def snake_to_mask(snake, shape):
-    rr, cc = draw.polygon(snake[:, 1], snake[:, 0], shape)
     img = np.zeros(shape, 'uint8')
-    img[rr, cc] = 1
+    try:
+        rr, cc = draw.polygon(snake[:, 1], snake[:, 0], shape)
+        img[rr, cc] = 1
+    except ValueError:
+        print(snake.shape, shape)
     return img
 
 
@@ -621,7 +624,7 @@ def generate_description(snake, img):
     """Generates a dictionary with the descriptors of the snake and image
     provided."""
     mask = snake_to_mask(snake, img.shape)
-    description = get_description(snake)
+    description = get_description(mask)
     description.update(get_texture_description(img, snake))
 
     return description
@@ -826,14 +829,13 @@ def segment_timepoint(tran, fluo, region):
                 solidity = region.solidity
 
         if solidity < 0.5:
-            segmented = segmentation.morphological_chan_vese(this_tran,
-                                                             20,
-                                                             init_level_set=labeled == label,
-                                                             smoothing=4,
-                                                             lambda2=2)
+            labeled = segmentation.morphological_chan_vese(this_tran,
+                                                           20,
+                                                           init_level_set=labeled == label,
+                                                           smoothing=4,
+                                                           lambda2=2)
 
-        e_snk = ndi.morphology.binary_fill_holes(labeled == label)
-        e_snk = mask_to_snake(segmented == label)
+        e_snk = mask_to_snake(labeled == label)
 
         results['z'].append([z])
         results['external_snake'].append([e_snk])
