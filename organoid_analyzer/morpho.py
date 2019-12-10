@@ -639,7 +639,7 @@ def best_haralick(z, harals, ax=None):
     z : numpy.array
         1D Array of z values for the Haralick Features
     harals : numpy.array
-        1D Array of the Haralick Features
+        1D Array of one set of Haralick Features
     ax : matplotlib.Axes (optional, default=None)
         If given, a plot of values and fit is done
 
@@ -649,7 +649,19 @@ def best_haralick(z, harals, ax=None):
         (best z value, best Haralick estimation)
     """
     z = z.astype(float)
-    p = np.polyfit(z, harals, 2)
+    idx = np.isfinite(z) & np.isfinite(harals)
+
+    if np.sum(idx) == 0:
+        return np.nan, np.nan
+
+    if np.sum(idx) < 3:
+        # if there are not enough points for quadratic fit
+        x_ver = np.mean(z[idx])
+        y_ver = np.mean(harals[idx])
+
+        return x_ver, y_ver
+
+    p = np.polyfit(z[idx], harals[idx], 2)
     poly = np.poly1d(p)
 
     x_ver = -p[1] / (2 * p[0])
@@ -677,7 +689,7 @@ def best_z_plane(z_bests, z_min=0, z_max=6, z_best_prev=3):
     z_max : float, int (optional, default=6)
         maximum possible value of z
     z_best_prev : int, float (optional, default=3)
-        Previous best z plane to untia a draw
+        Previous best z plane to untie a draw
 
     Returns
     -------
@@ -688,6 +700,9 @@ def best_z_plane(z_bests, z_min=0, z_max=6, z_best_prev=3):
     rounded = filter(np.isfinite, z_bests)
     rounded = [round(this) for this in rounded]
     rounded = np.asarray(rounded)
+
+    if len(rounded) == 0:
+        return z_best_prev
 
     try:
         z_best = mode(rounded)
@@ -741,7 +756,8 @@ def best_hu(z, hu_matrix, ax=None, z_best_prev=0):
         ax.axhline(y=best)
         ax.set_title('best z: %s' % best)
 
-    return best, hu_matrix[best, :]
+    best_ind = np.where(z == best)[0][0]
+    return best, hu_matrix[best_ind, :]
 
 
 def protocol(stack, region):
