@@ -7,6 +7,8 @@ import numpy as np
 from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
 from mahotas.features import haralick
+from sklearn.neighbors import NearestNeighbors
+import networkx as nx
 
 import statistics
 from statistics import mode
@@ -125,10 +127,10 @@ def get_init_snake(mask, region):
     return init_snake
 
 
-def get_masked_img(img, snake):
+def get_masked_img(img, mask):
     """Returns the image where every pixel outside the snake is zero."""
     masked_img = np.zeros_like(img)
-    mask = snake_to_mask(snake, img.shape)
+    # mask = snake_to_mask(snake, img.shape)
     masked_img[np.nonzero(mask)] = img[np.nonzero(mask)]
 
     return masked_img
@@ -254,19 +256,31 @@ def polar_snake(snake):
 
 
 def sort_snake(snake):
-    _, _, theta = polar_snake(snake)
-    ndxs = np.argsort(theta)
-    return snake[ndxs, :]
+    x = snake[:, 0]
+    y = snake[:, 1]
+    points = np.c_[x, y]
+
+    clf = NearestNeighbors(2).fit(points)
+    G = clf.kneighbors_graph()
+
+    T = nx.from_scipy_sparse_matrix(G)
+    order = list(nx.dfs_preorder_nodes(T))
+
+    xx = x[order]
+    yy = y[order]
+
+    return np.asarray([xx, yy]).T
 
 
 def mask_to_snake(mask):
     seg = segmentation.find_boundaries(mask)
     out = np.nonzero(seg)
-    return np.asarray(out).T
+    return np.asarray(out)
 
 
 def snake_to_mask(snake, shape):
     img = np.zeros(shape, 'uint8')
+    snake = sort_snake(snake)
     try:
         rr, cc = draw.polygon(snake[:, 1], snake[:, 0], shape)
         img[rr, cc] = 1
@@ -598,12 +612,12 @@ def get_description(mask, descriptors=None):
     return description  #sometimes there is no region
 
 
-def get_texture_description(img, snake):
+def get_texture_description(img, mask):
     """Returns a dictionary with the texture descriptors of the masked
     image."""
     description = {}
     #img = img.astype('uint8')  # TODO: test implicancies of reducing resolution
-    masked_img = get_masked_img(img, snake)
+    masked_img = get_masked_img(img, mask)
     weighted_hu_moments = get_hu_moments(masked_img)
     for j in range(7):
         description['intensity_hu_moment_' + str(j + 1)] = weighted_hu_moments[
@@ -620,12 +634,12 @@ def get_texture_description(img, snake):
     return description
 
 
-def generate_description(snake, img):
+def generate_description(mask, img):
     """Generates a dictionary with the descriptors of the snake and image
     provided."""
-    mask = snake_to_mask(snake, img.shape)
+    # mask = snake_to_mask(snake, img.shape)
     description = get_description(mask)
-    description.update(get_texture_description(img, snake))
+    description.update(get_texture_description(img, mask))
 
     return description
 
@@ -820,7 +834,7 @@ def segment_timepoint(tran, fluo, region):
         print('no initial mask')
     # init_snake = get_init_snake(mask, region)
 
-    results = {'z': [], 'external_snake': []}
+    results = {'z': [], 'external_snake': [], 'mask': []}
     for z, tran_z in enumerate(tran):
         this_tran = util.img_as_float(tran_z)
         segmented = segmentation.morphological_chan_vese(this_tran,
@@ -855,6 +869,7 @@ def segment_timepoint(tran, fluo, region):
 
         results['z'].append([z])
         results['external_snake'].append([e_snk])
+        results['mask'].append([labeled == label])
 
     return results
 
@@ -919,7 +934,7 @@ def timepoint_to_df(params):
         df = pd.DataFrame({this_key: this_val
                            for this_key, this_val in zip(dict_keys, vals)})
 
-        description = generate_description(df['external_snake'].values[0],
+        description = generate_description(df['mask'].values[0],
                                            tran[df['z'].values[0]])
 
         for prop in description.keys():
@@ -933,6 +948,7 @@ def timepoint_to_df(params):
         df['crop'] = [region]
         df['timepoint'] = ndx
 
+        df.drop(columns='mask', inplace=True)
         dfs.append(df)
 
     dfs = pd.concat(dfs, ignore_index=True)
