@@ -256,6 +256,9 @@ def polar_snake(snake):
 
 
 def sort_snake(snake):
+    _, _, theta = polar_snake(snake)
+    ndxs = np.argsort(theta)
+    return snake[ndxs, :]
     x = snake[:, 0]
     y = snake[:, 1]
     points = np.c_[x, y]
