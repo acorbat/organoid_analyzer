@@ -8,8 +8,7 @@ setup(
     license='MIT',
     author='Agustin Corbat',
     author_email='acorbat@df.uba.ar',
-    description='Package used for analysing homoFRET experiments with caspase '
-                'biosensors.',
+    description='Segmenter and morphological analyzer for organoids.',
     install_requires=['imageio', 'IPython', 'matplotlib', 'numpy', 'pandas',
                       'mahotas', 'pyyaml', 'scikit-image', 'scikit-learn',
                       'scipy', 'seaborn',
