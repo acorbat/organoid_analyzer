@@ -11,7 +11,7 @@ setup(
     description='Segmenter and morphological analyzer for organoids.',
     install_requires=['imageio', 'IPython', 'matplotlib', 'numpy', 'pandas',
                       'mahotas', 'pyyaml', 'scikit-image', 'scikit-learn',
-                      'scipy', 'seaborn',
+                      'scipy', 'seaborn', 'tifffile',
                       'img_manager @ git+https://github.com/acorbat/img_manager.git',
                       'serialize @ git+https://github.com/hgrecco/serialize.git']
 )

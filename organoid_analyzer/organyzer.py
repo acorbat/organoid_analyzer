@@ -137,7 +137,7 @@ class Organyzer(object):
             region = self.file_dict[file]['crop']
             last_time = self.file_dict[file].get('time_crop')
 
-            file, fluo_file = self._check_path((file , fluo_file))
+            file, fluo_file = self._check_path((file, fluo_file))
 
             print('Analyzing file: %s' % file)
 
@@ -237,9 +237,11 @@ class Organyzer(object):
 
         z_prev = 3
         z_hu = 0
+        cols = ['moments_hu'] + ['haralick_' + str(n) for n in range(1, 14)]
         for params, this_df in self.df.groupby(['tran_path', 'timepoint']):
             print('For File %s polishing timepoint %s' % params)
 
+            this_df.dropna(subset=cols, inplace=True)
             z = this_df.z.values
 
             # Best Haralick Features
