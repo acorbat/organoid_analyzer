@@ -1,17 +1,16 @@
-import os
+from collections import Counter
 import itertools as itools
-import pandas as pd
-
-from scipy import signal, ndimage as ndi
-import numpy as np
-from skimage import segmentation, draw, filters, measure, io as skio, \
-    morphology, exposure, feature, transform, util
-from mahotas.features import haralick
-
+import os
 import statistics
 from statistics import mode
+
+from mahotas.features import haralick
+import numpy as np
+import pandas as pd
+from scipy import signal, ndimage as ndi
 import scipy.stats as st
-from collections import Counter
+from skimage import segmentation, draw, filters, measure, io as skio, \
+    morphology, exposure, feature, transform, util
 
 from img_manager import tifffile as tif
 

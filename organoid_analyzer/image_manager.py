@@ -1,8 +1,8 @@
 import pathlib
-import numpy as np
-import pandas as pd
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 from skimage import draw, transform, util, filters
 
 from img_manager import tifffile as tif

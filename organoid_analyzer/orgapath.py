@@ -1,11 +1,10 @@
 import pathlib
-import yaml
-import numpy as np
-
-import time
 import queue
+import time
 from threading import Thread
+import yaml
 
+import numpy as np
 from skimage import io
 from skimage.viewer import ImageViewer
 from skimage.viewer.canvastools import RectangleTool

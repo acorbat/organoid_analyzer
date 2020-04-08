@@ -1,12 +1,14 @@
 import pathlib
 import yaml
 import multiprocessing
-import pandas as pd
-import numpy as np
 
-from organoid_analyzer import orgapath as op
-from organoid_analyzer import morpho
-from organoid_analyzer import image_manager as im
+import numpy as np
+import pandas as pd
+
+from . import orgapath as op
+from . import morpho
+from . import image_manager as im
+
 
 class Organyzer(object):
 

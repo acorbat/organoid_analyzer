@@ -1,13 +1,16 @@
-import numpy as np
 import imageio
 
+from IPython.display import HTML
+from matplotlib import animation, rc
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.widgets import RectangleSelector, Button
 from matplotlib.colors import ListedColormap
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+import numpy as np
 
 from . import morpho
+
 
 def show_snakes(img, *snakes):
     fig, ax = plt.subplots(figsize=(7, 7))
@@ -21,9 +24,6 @@ def show_snakes(img, *snakes):
     ax.set_xticks([]), ax.set_yticks([])
     ax.axis([0, img.shape[1], img.shape[0], 0])
 
-
-from matplotlib import animation, rc
-from IPython.display import HTML    
     
 def animate_stack_snakes(stack, *stack_snakes):
     fig, ax = plt.subplots(figsize=(7, 7))
