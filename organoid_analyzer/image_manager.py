@@ -1,11 +1,11 @@
 import pathlib
-import numpy as np
-import pandas as pd
 
 import matplotlib.pyplot as plt
-from skimage import draw
+import numpy as np
+import pandas as pd
+from skimage import draw, transform, util, filters
 
-from img_manager import tifffile as tif
+import tifffile as tif
 
 
 class ImageOrganyzer(object):
@@ -62,11 +62,13 @@ class ImageOrganyzer(object):
         first_folder = self.path.joinpath(self.inner_folders[0])
         for this_file in first_folder.iterdir():
             print('Concatenating %s' % str(this_file))
-            if this_file.suffix.lower() != '.tif':
+            if this_file.suffix.lower() != '.tif' and \
+                    this_file.suffix.lower() != '.btf':
                 continue
 
             this_file_name = this_file.name
             save_path = self.save_path.joinpath(this_file_name)
+            save_path = save_path.with_suffix('.tif')
             if save_path.exists():
                 print('File already concatenated')
 
@@ -88,8 +90,8 @@ class ImageOrganyzer(object):
                 metadatas.append(metadata)
                 this_img_file = tif.TiffFile(str(this_other_file))
 
-                times.append(int(metadata['Time']))
-                zetas.append(int(metadata['Z']))
+                times.append(int(metadata['time']))
+                zetas.append(int(metadata['z']))
 
                 stack = this_img_file.asarray()
 
@@ -102,7 +104,7 @@ class ImageOrganyzer(object):
 
             stack = stack.reshape(times, zetas, stack.shape[-2], stack.shape[-1])
             metadata = metadatas[-1]
-            metadata['Time'] = times
+            metadata['time'] = times
 
             self.save_img(save_path, stack, axes='TZYX', create_dir=True,
             metadata=metadata)
@@ -178,7 +180,7 @@ def get_metadata(filepath):
 
                 except:
                     pass
-        meta_dict = {val.split('=')[0]: val.split('=')[1].replace('\n', '') for
+        meta_dict = {val.split('=')[0].lower(): val.split('=')[1].replace('\n', '') for
                      val in metadata}
         for key, val in meta_dict.items():
             try:

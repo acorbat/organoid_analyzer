@@ -1,19 +1,20 @@
-import os
+from collections import Counter
 import itertools as itools
-import pandas as pd
-
-from scipy import signal, ndimage as ndi
-import numpy as np
-from skimage import segmentation, draw, filters, measure, io as skio, \
-    morphology, exposure, feature, transform, util
-from mahotas.features import haralick
-
+import os
 import statistics
 from statistics import mode
-import scipy.stats as st
-from collections import Counter
 
-from img_manager import tifffile as tif
+from mahotas.features import haralick
+import networkx as nx
+import numpy as np
+import pandas as pd
+from scipy import signal, ndimage as ndi
+import scipy.stats as st
+from skimage import segmentation, draw, filters, measure, io as skio, \
+    morphology, exposure, feature, transform, util
+from sklearn.neighbors import NearestNeighbors
+
+import tifffile as tif
 
 active_contour = segmentation.active_contour
 
@@ -85,8 +86,9 @@ def mask_organoids(img, region, min_organoid_size=2500):
     mask[:, :int(xmin)] = 0
     mask[:, int(xmax):] = 0
 
-    mask = morphology.remove_small_holes(mask, area_threshold=min_organoid_size)
+    mask = morphology.binary_closing(mask, selem=morphology.disk(15))
     mask = morphology.remove_small_objects(mask, min_size=min_organoid_size)
+    mask = ndi.morphology.binary_fill_holes(mask)
 
     return mask, processed_image
 
@@ -125,10 +127,10 @@ def get_init_snake(mask, region):
     return init_snake
 
 
-def get_masked_img(img, snake):
+def get_masked_img(img, mask):
     """Returns the image where every pixel outside the snake is zero."""
     masked_img = np.zeros_like(img)
-    mask = snake_to_mask(snake, img.shape)
+    # mask = snake_to_mask(snake, img.shape)
     masked_img[np.nonzero(mask)] = img[np.nonzero(mask)]
 
     return masked_img
@@ -257,18 +259,36 @@ def sort_snake(snake):
     _, _, theta = polar_snake(snake)
     ndxs = np.argsort(theta)
     return snake[ndxs, :]
+    x = snake[:, 0]
+    y = snake[:, 1]
+    points = np.c_[x, y]
+
+    clf = NearestNeighbors(2).fit(points)
+    G = clf.kneighbors_graph()
+
+    T = nx.from_scipy_sparse_matrix(G)
+    order = list(nx.dfs_preorder_nodes(T))
+
+    xx = x[order]
+    yy = y[order]
+
+    return np.asarray([xx, yy]).T
 
 
 def mask_to_snake(mask):
     seg = segmentation.find_boundaries(mask)
     out = np.nonzero(seg)
-    return np.asarray(out).T
+    return np.asarray(out)
 
 
 def snake_to_mask(snake, shape):
-    rr, cc = draw.polygon(snake[:, 1], snake[:, 0], shape)
     img = np.zeros(shape, 'uint8')
-    img[rr, cc] = 1
+    snake = sort_snake(snake)
+    try:
+        rr, cc = draw.polygon(snake[:, 1], snake[:, 0], shape)
+        img[rr, cc] = 1
+    except ValueError:
+        print(snake.shape, shape)
     return img
 
 
@@ -588,18 +608,19 @@ def get_description(mask, descriptors=None):
                        'major_axis_length', 'minor_axis_length', 'moments_hu',
                        'perimeter', 'solidity', ]
     description = {}
-    for region in measure.regionprops(mask):
+    for region in measure.regionprops(measure.label(mask)):
         for prop in descriptors:
             description[prop] = region[prop]
         return description
+    return description  #sometimes there is no region
 
 
-def get_texture_description(img, snake):
+def get_texture_description(img, mask):
     """Returns a dictionary with the texture descriptors of the masked
     image."""
     description = {}
     #img = img.astype('uint8')  # TODO: test implicancies of reducing resolution
-    masked_img = get_masked_img(img, snake)
+    masked_img = get_masked_img(img, mask)
     weighted_hu_moments = get_hu_moments(masked_img)
     for j in range(7):
         description['intensity_hu_moment_' + str(j + 1)] = weighted_hu_moments[
@@ -616,12 +637,12 @@ def get_texture_description(img, snake):
     return description
 
 
-def generate_description(snake, img):
+def generate_description(mask, img):
     """Generates a dictionary with the descriptors of the snake and image
     provided."""
-    mask = snake_to_mask(snake, img.shape)
+    # mask = snake_to_mask(snake, img.shape)
     description = get_description(mask)
-    description.update(get_texture_description(img, snake))
+    description.update(get_texture_description(img, mask))
 
     return description
 
@@ -635,7 +656,7 @@ def best_haralick(z, harals, ax=None):
     z : numpy.array
         1D Array of z values for the Haralick Features
     harals : numpy.array
-        1D Array of the Haralick Features
+        1D Array of one set of Haralick Features
     ax : matplotlib.Axes (optional, default=None)
         If given, a plot of values and fit is done
 
@@ -645,7 +666,19 @@ def best_haralick(z, harals, ax=None):
         (best z value, best Haralick estimation)
     """
     z = z.astype(float)
-    p = np.polyfit(z, harals, 2)
+    idx = np.isfinite(z) & np.isfinite(harals)
+
+    if np.sum(idx) == 0:
+        return np.nan, np.nan
+
+    if np.sum(idx) < 3:
+        # if there are not enough points for quadratic fit
+        x_ver = np.mean(z[idx])
+        y_ver = np.mean(harals[idx])
+
+        return x_ver, y_ver
+
+    p = np.polyfit(z[idx], harals[idx], 2)
     poly = np.poly1d(p)
 
     x_ver = -p[1] / (2 * p[0])
@@ -673,7 +706,7 @@ def best_z_plane(z_bests, z_min=0, z_max=6, z_best_prev=3):
     z_max : float, int (optional, default=6)
         maximum possible value of z
     z_best_prev : int, float (optional, default=3)
-        Previous best z plane to untia a draw
+        Previous best z plane to untie a draw
 
     Returns
     -------
@@ -684,6 +717,9 @@ def best_z_plane(z_bests, z_min=0, z_max=6, z_best_prev=3):
     rounded = filter(np.isfinite, z_bests)
     rounded = [round(this) for this in rounded]
     rounded = np.asarray(rounded)
+
+    if len(rounded) == 0:
+        return z_best_prev
 
     try:
         z_best = mode(rounded)
@@ -737,7 +773,8 @@ def best_hu(z, hu_matrix, ax=None, z_best_prev=0):
         ax.axhline(y=best)
         ax.set_title('best z: %s' % best)
 
-    return best, hu_matrix[best, :]
+    best_ind = np.where(z == best)[0][0]
+    return best, hu_matrix[best_ind, :]
 
 
 def protocol(stack, region):
@@ -795,22 +832,47 @@ def segment_timepoint(tran, fluo, region):
         raise ValueError('Dimension of timepoint is neither 2 or 3.')
 
     mask, processed_image = mask_organoids(tran, region)
-    init_snake = get_init_snake(mask, region)
 
-    results = {'z': [], 'initial_snake': [], 'external_snake': []}
+    if not mask.any():
+        print('no initial mask')
+    # init_snake = get_init_snake(mask, region)
+
+    results = {'z': [], 'external_snake': [], 'mask': []}
     for z, tran_z in enumerate(tran):
-        e_snk = find_external(tran_z, init_snake, mult=-1)
-        # i_snk, _ = find_internal(tran, e_snk)
-        # l_snk = find_external(fluo, init_snake, mult=1)
-        mask = snake_to_mask(e_snk, tran_z.shape)
-        labeled = morphology.label(mask)
-        if (labeled == 0).all():  # I am not sure this is still necessary
-            e_snk = find_external(tran, init_snake, mult=-1, gamma=0.1)
+        this_tran = util.img_as_float(tran_z)
+        segmented = segmentation.morphological_chan_vese(this_tran,
+                                                         20,
+                                                         init_level_set=mask,
+                                                         smoothing=4,
+                                                         lambda2=2)
+        if not segmented.any():
+            print('no segmented mask')
+
+        segmented = morphology.binary_closing(segmented,
+                                              selem=morphology.disk(10))
+        segmented = ndi.morphology.binary_fill_holes(segmented)
+        labeled = measure.label(segmented)
+        max_area = 0
+        label = 1
+        solidity = 0
+        for region in measure.regionprops(labeled):
+            if region.area > max_area:
+                max_area = region.area
+                label = region.label
+                solidity = region.solidity
+
+        if solidity < 0.5:
+            labeled = segmentation.morphological_chan_vese(this_tran,
+                                                           20,
+                                                           init_level_set=labeled == label,
+                                                           smoothing=4,
+                                                           lambda2=2)
+
+        e_snk = mask_to_snake(labeled == label)
 
         results['z'].append([z])
-        results['initial_snake'].append([init_snake])
         results['external_snake'].append([e_snk])
-    # 'internal_snakes': [i_snk], 'lumen_snakes': [l_snk]}
+        results['mask'].append([labeled == label])
 
     return results
 
@@ -875,7 +937,7 @@ def timepoint_to_df(params):
         df = pd.DataFrame({this_key: this_val
                            for this_key, this_val in zip(dict_keys, vals)})
 
-        description = generate_description(df['external_snake'].values[0],
+        description = generate_description(df['mask'].values[0],
                                            tran[df['z'].values[0]])
 
         for prop in description.keys():
@@ -889,6 +951,7 @@ def timepoint_to_df(params):
         df['crop'] = [region]
         df['timepoint'] = ndx
 
+        df.drop(columns='mask', inplace=True)
         dfs.append(df)
 
     dfs = pd.concat(dfs, ignore_index=True)

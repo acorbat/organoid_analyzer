@@ -1,12 +1,14 @@
 import pathlib
 import yaml
 import multiprocessing
-import pandas as pd
-import numpy as np
 
-from organoid_analyzer import orgapath as op
-from organoid_analyzer import morpho
-from organoid_analyzer import image_manager as im
+import numpy as np
+import pandas as pd
+
+from . import orgapath as op
+from . import morpho
+from . import image_manager as im
+
 
 class Organyzer(object):
 
@@ -236,9 +238,11 @@ class Organyzer(object):
 
         z_prev = 3
         z_hu = 0
+        cols = ['moments_hu'] + ['haralick_' + str(n) for n in range(1, 14)]
         for params, this_df in self.df.groupby(['tran_path', 'timepoint']):
             print('For File %s polishing timepoint %s' % params)
 
+            this_df.dropna(subset=cols, inplace=True)
             z = this_df.z.values
 
             # Best Haralick Features

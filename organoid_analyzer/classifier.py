@@ -1,11 +1,11 @@
-import pickle
-import numpy as np
-
 from collections import Counter
-from serialize import dump, load
+import pickle
 
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import StratifiedKFold
+
+from serialize import dump, load
 
 
 class Normalizer(object):
