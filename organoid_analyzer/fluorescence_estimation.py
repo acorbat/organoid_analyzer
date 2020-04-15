@@ -35,8 +35,8 @@ def create_army():
 def correct_stacks(trans, fluo, auto):
     army = create_army()
 
-    army['Trans'].load_stack(trans)
-    army['Fluo'].load_stack(fluo)
-    army['Auto'].load_stack(auto)
+    army['Trans'].load_stack(trans.copy())
+    army['Fluo'].load_stack(fluo.copy())
+    army['Auto'].load_stack(auto.copy())
     army.run_correctors()
     return army['Trans'].stack, army['Fluo'].stack, army['Auto'].stack
