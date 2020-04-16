@@ -294,7 +294,7 @@ def snake_to_mask(snake, shape):
 
 
 def sort_border(border_coords, piece_length=50, max_distance=20,
-                max_iterations=50):
+                max_iterations=100):
     """Sorts the coordinates of the border of the mask.
 
     Parameters
@@ -409,7 +409,7 @@ def resort_by_pieces(sorted_points, length_threshold=100):
             euclidean(new_sorted_points[-1], this_piece[-1]) for this_piece in
             pieces]
 
-        if min(pieces_distance_first) < min(pieces_distance_last):
+        if min(pieces_distance_first) <= min(pieces_distance_last):
             ind = np.argmin(pieces_distance_first)
             new_sorted_points.extend(pieces[ind])
             pieces.pop(ind)
@@ -434,9 +434,24 @@ def delete_far_points(sorted_points, distance_threshold=20, max_iterations=40):
         new_sorted_points = np.delete(new_sorted_points,
                                       np.where(distance > 20)[0], axis=0)
         distance = calculate_distances(new_sorted_points)
+
         if iteration > max_iterations:
-            print('Too many points would have been deleted.')
-            return sorted_points
+            print('Too many points would have been deleted. Try other direction.')
+            iteration = 0
+            new_sorted_points = sorted_points.copy()
+            distance = calculate_distances(new_sorted_points)
+
+            while any(distance > 20):
+                new_sorted_points = np.delete(new_sorted_points,
+                                              np.where(distance > 20)[0] + 1,
+                                              axis=0)
+                distance = calculate_distances(new_sorted_points)
+                if iteration > max_iterations:
+                    print('Too many points in both directions.')
+                    return sorted_points
+                iteration += 1
+            return new_sorted_points
+
         iteration += 1
 
     return new_sorted_points
