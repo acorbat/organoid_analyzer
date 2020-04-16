@@ -9,10 +9,11 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 from scipy import signal, ndimage as ndi
+from scipy.spatial.distance import euclidean
 import scipy.stats as st
 from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
-from sklearn.neighbors import NearestNeighbors
+from sklearn.neighbors import NearestNeighbors, KDTree
 
 import tifffile as tif
 
@@ -290,6 +291,144 @@ def snake_to_mask(snake, shape):
     except ValueError:
         print(snake.shape, shape)
     return img
+
+
+def sort_border(border_coords, piece_length=50, max_distance=20,
+                max_iterations=50):
+    """Sorts the coordinates of the border of the mask.
+
+    Parameters
+    ----------
+    border_coords : array
+        Coordinates of the border of the mask
+    piece_length : int
+        Maximum length of the pieces that are allowed after first sort
+    max_distance : int
+        Maximum distance between points allowed after second sort
+    max_iterations : int
+        Maximum number of deletions allowed on second sort
+
+    Returns
+    -------
+    sorted_points : numpy.ndarray 2D
+        Sorted array of points; shape=(number of points, 2)
+    """
+    points = np.c_[border_coords[1], border_coords[0]]
+    
+    # FInd first point
+    _, _, theta = polar_snake(points)
+    first_point = np.argsort(theta)[0]
+
+    # First sort with KD Tree
+    sorted_points = kdtree_sorter(points, first_point)
+
+    # Separating in pieces and resorting
+    sorted_points = resort_by_pieces(sorted_points,
+                                     length_threshold=piece_length)
+
+    # Deleting the remaining points that are far away
+    sorted_points = delete_far_points(sorted_points,
+                                      distance_threshold=max_distance,
+                                      max_iterations=max_iterations)
+
+    # It may happen after sorting that it is going anti-clockwise so we have to
+    # invert order
+    if sorted_points[100, 1] < sorted_points[0, 1]:
+        sorted_points = sorted_points[::-1]
+
+    return sorted_points
+
+
+def kdtree_sorter(points, first_point=0):
+    """Sorts points using KD Tree starting from first_point (index of point)"""
+    sorted_points = []
+    remaining_points = points.copy()
+
+    nearest_point_ind = first_point
+    sorted_points.append(remaining_points[nearest_point_ind])
+    remaining_points = np.delete(remaining_points, nearest_point_ind, axis=0)
+
+    while len(remaining_points) > 0:
+        #     print('Remaining points: %s' % len(remaining_points))
+        tree = KDTree(remaining_points, leaf_size=2,
+                      metric='euclidean')  # Create a distance tree
+        dist, nearest_point_ind = tree.query(sorted_points[-1].reshape(1, -1),
+                                             k=1)
+
+        sorted_points.append(remaining_points[nearest_point_ind][0][0])
+        remaining_points = np.delete(remaining_points, nearest_point_ind,
+                                     axis=0)
+    return np.asarray(sorted_points)
+
+
+def calculate_distances(points):
+    """Calculates euclidean distance between consecutive points"""
+    distance = np.asarray(
+        [euclidean(points[i], points[i + 1]) for i in range(len(points) - 1)])
+    return distance
+
+
+def resort_by_pieces(sorted_points, length_threshold=100):
+    """Separates the ordered points into pieces where big jumps have been
+    done. Short pieces are discarded and the remaining ones are reordered."""
+    far_points = np.where(calculate_distances(sorted_points) > 6)[0]
+    pieces = []
+    pieces.append(sorted_points[0:far_points[0] + 1])
+
+    for i in range(len(far_points) - 1):
+        pieces.append(sorted_points[far_points[i] + 1:far_points[i + 1] + 1])
+
+    pieces.append(sorted_points[far_points[i + 1] + 1:])
+
+    long_pieces = []
+    for this_piece in pieces:
+        if len(this_piece) > length_threshold:
+            long_pieces.append(this_piece)
+    pieces = long_pieces
+
+    new_sorted_points = []
+    new_sorted_points.extend(pieces[0])
+    pieces.pop(0)
+
+    while len(pieces) > 0:
+        pieces_distance_first = [
+            euclidean(new_sorted_points[-1], this_piece[0]) for this_piece in
+            pieces]
+        pieces_distance_last = [
+            euclidean(new_sorted_points[-1], this_piece[-1]) for this_piece in
+            pieces]
+
+        if min(pieces_distance_first) < min(pieces_distance_last):
+            ind = np.argmin(pieces_distance_first)
+            new_sorted_points.extend(pieces[ind])
+            pieces.pop(ind)
+
+        elif min(pieces_distance_first) > min(pieces_distance_last):
+            print('invert')
+            ind = np.argmin(pieces_distance_last)
+            new_sorted_points.extend(pieces[ind][::-1])
+            pieces.pop(ind)
+
+    new_sorted_points = np.asarray(new_sorted_points)
+    return new_sorted_points
+
+
+def delete_far_points(sorted_points, distance_threshold=20, max_iterations=40):
+    """Deletes every point that is farther than distance_threshold, unless more
+    than max_iterations is required."""
+    new_sorted_points = sorted_points.copy()
+    distance = calculate_distances(new_sorted_points)
+    iteration = 0
+    while any(distance > distance_threshold):
+        new_sorted_points = np.delete(new_sorted_points,
+                                      np.where(distance > 20)[0], axis=0)
+        distance = calculate_distances(new_sorted_points)
+        if iteration > max_iterations:
+            print('Too many points would have been deleted.')
+            return sorted_points
+        iteration += 1
+
+    return new_sorted_points
 
 
 def _and_(*conds):
