@@ -284,7 +284,7 @@ def mask_to_snake(mask):
 
 def snake_to_mask(snake, shape):
     img = np.zeros(shape, 'uint8')
-    snake = sort_snake(snake)
+    snake = sort_border(snake)
     try:
         rr, cc = draw.polygon(snake[:, 1], snake[:, 0], shape)
         img[rr, cc] = 1
@@ -313,7 +313,10 @@ def sort_border(border_coords, piece_length=50, max_distance=20,
     sorted_points : numpy.ndarray 2D
         Sorted array of points; shape=(number of points, 2)
     """
-    points = np.c_[border_coords[1], border_coords[0]]
+    if len(border_coords) == 2:
+        points = np.c_[border_coords[1], border_coords[0]]
+    else:
+        points = border_coords.copy()
     
     # FInd first point
     _, _, theta = polar_snake(points)
@@ -372,6 +375,11 @@ def resort_by_pieces(sorted_points, length_threshold=100):
     """Separates the ordered points into pieces where big jumps have been
     done. Short pieces are discarded and the remaining ones are reordered."""
     far_points = np.where(calculate_distances(sorted_points) > 6)[0]
+
+    if len(far_points) == 0:
+        print('There were no far points')
+        return sorted_points
+
     pieces = []
     pieces.append(sorted_points[0:far_points[0] + 1])
 
