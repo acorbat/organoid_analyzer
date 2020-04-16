@@ -336,7 +336,7 @@ def sort_border(border_coords, piece_length=50, max_distance=20,
 
     # It may happen after sorting that it is going anti-clockwise so we have to
     # invert order
-    if sorted_points[100, 1] < sorted_points[0, 1]:
+    if sorted_points[100, 1] > sorted_points[0, 1]:
         sorted_points = sorted_points[::-1]
 
     return sorted_points
