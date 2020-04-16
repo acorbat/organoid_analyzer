@@ -386,7 +386,10 @@ def resort_by_pieces(sorted_points, length_threshold=100):
     for i in range(len(far_points) - 1):
         pieces.append(sorted_points[far_points[i] + 1:far_points[i + 1] + 1])
 
-    pieces.append(sorted_points[far_points[i + 1] + 1:])
+    if len(far_points) == 1:
+        pieces.append(sorted_points[far_points[0] + 1:])
+    else:
+        pieces.append(sorted_points[far_points[i + 1] + 1:])
 
     long_pieces = []
     for this_piece in pieces:
