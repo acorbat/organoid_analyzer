@@ -14,8 +14,9 @@ import scipy.stats as st
 from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
 from sklearn.neighbors import NearestNeighbors, KDTree
-
 import tifffile as tif
+
+from . import fluorescence_estimation as fe
 
 active_contour = segmentation.active_contour
 
@@ -802,12 +803,13 @@ def get_texture_description(img, mask):
     return description
 
 
-def generate_description(mask, img):
+def generate_description(mask, trans, fluo):
     """Generates a dictionary with the descriptors of the snake and image
     provided."""
-    # mask = snake_to_mask(snake, img.shape)
+    # mask = snake_to_mask(snake, trans.shape)
     description = get_description(mask)
-    description.update(get_texture_description(img, mask))
+    description.update(get_texture_description(trans, mask))
+    description.update(fe.get_fluorescence_estimators(fluo, mask))
 
     return description
 
@@ -1102,6 +1104,7 @@ def timepoint_to_df(params):
         df = pd.DataFrame({this_key: this_val
                            for this_key, this_val in zip(dict_keys, vals)})
 
+        # Generate a description of textures and Hu moments of the mask
         description = generate_description(df['mask'].values[0],
                                            tran[df['z'].values[0]])
 
