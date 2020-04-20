@@ -25,6 +25,10 @@ class Organyzer(object):
         self.set_output_path_and_load_df()
 
         # set parameters for analysis and saving files
+        self.max_images_buffered_time = 2  # Maximum number of images buffered
+        # for time cropping
+        self.max_images_buffered_region = 10  # Maximum number of images
+        # buffered for region cropping
         self.workers = 5  # How many threads can be used
 
     def set_output_path_and_load_df(self):
@@ -124,9 +128,13 @@ class Organyzer(object):
         loads the dictionary with the crops."""
         if self.filepath_yaml_crop.exists():
             op.add_crop_to_yaml(str(self.filepath_yaml),
-                                crop_filename=self.filepath_yaml_crop)
+                                crop_filename=self.filepath_yaml_crop,
+                                max_images_buffered_time=self.max_images_buffered_time,
+                                max_images_buffered_region=self.max_images_buffered_region)
         else:
-            op.add_crop_to_yaml(str(self.filepath_yaml))
+            op.add_crop_to_yaml(str(self.filepath_yaml),
+                                max_images_buffered_time=self.max_images_buffered_time,
+                                max_images_buffered_region=self.max_images_buffered_region)
 
         self.file_dict = self.load_yaml(self.filepath_yaml_crop)
 
