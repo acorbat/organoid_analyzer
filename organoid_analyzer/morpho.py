@@ -1106,7 +1106,8 @@ def timepoint_to_df(params):
 
         # Generate a description of textures and Hu moments of the mask
         description = generate_description(df['mask'].values[0],
-                                           tran[df['z'].values[0]])
+                                           tran[df['z'].values[0]],
+                                           fluo[df['z'].values[0]])
 
         for prop in description.keys():
             if isinstance(description[prop], (tuple, list, np.ndarray)):
