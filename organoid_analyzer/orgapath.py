@@ -170,11 +170,11 @@ class Timer(object):
     """As clear as the name."""
 
     def __enter__(self):
-        self.t = time.clock()
+        self.t = time.perf_counter()
         return self
 
     def __exit__(self, type, value, traceback):
-        self.elapsed = time.clock() - self.t
+        self.elapsed = time.perf_counter()
 
 
 def load_mp_image(filenames, dcrop=None):
