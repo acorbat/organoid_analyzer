@@ -116,8 +116,12 @@ def get_otsu_vals(img, mask, opening_radius=5):
     in mask."""
     thresh = filters.threshold_otsu(img[mask].flatten())
     new_mask = np.logical_and(mask, img > thresh)
-    new_mask = np.asarray([morph.binary_opening(this, selem=morph.disk(opening_radius))
+    if img.ndim > 2:
+        new_mask = np.asarray([morph.binary_opening(this,
+                                                    selem=morph.disk(opening_radius))
                            for this in new_mask])
+    else:
+        morph.binary_opening(new_mask, selem=morph.disk(opening_radius))
     vals = img[new_mask]
 
     return vals
