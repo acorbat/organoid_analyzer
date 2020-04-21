@@ -803,12 +803,13 @@ def get_texture_description(img, mask):
     return description
 
 
-def generate_description(mask, trans, fluo):
+def generate_description(mask, trans, fluo, auto):
     """Generates a dictionary with the descriptors of the snake and image
     provided."""
     # mask = snake_to_mask(snake, trans.shape)
     description = get_description(mask)
     description.update(get_texture_description(trans, mask))
+    trans, fluo, auto = fe.correct_stacks(trans, fluo, auto)
     description.update(fe.get_fluorescence_estimators(fluo, mask))
 
     return description
@@ -960,7 +961,7 @@ def protocol(stack, region):
     return e_snks, i_snks
 
 
-def segment_timepoint(tran, fluo, region):
+def segment_timepoint(tran, region):
     """Analyzes a single pair of transmission and fluorescence timepoint, with
     the specified region of the desired organoid and returns a dictionary with
     the results.
@@ -1077,15 +1078,17 @@ def timepoint_to_df(params):
     df : pandas DataFrame
         Small DataFrame with the results of a single timepoint analysis."""
 
-    ndx, key, filepath, fluo_filepath, region = params
+    ndx, key, filepath, fluo_filepath, auto_filepath, region = params
 
     print('analyzing timepoint %s from file %s' % (ndx, filepath))
 
     tran_img = tif.TiffFile(str(filepath))
     fluo_img = tif.TiffFile(str(fluo_filepath))
+    auto_img = tif.TiffFile(str(auto_filepath))
 
     tran = tran_img.asarray(key=key)
     fluo = fluo_img.asarray(key=key)
+    auto = auto_img.asarray(key=key)
 
     if len(tran.shape) == 2:
         tran = tran[np.newaxis, :]
@@ -1096,7 +1099,7 @@ def timepoint_to_df(params):
     if tran[0, 0, 0] >= 2**15:
         tran -= 2**15
 
-    to_save = segment_timepoint(tran, fluo, region)
+    to_save = segment_timepoint(tran, region)
 
     dfs = []
     dict_keys = list(to_save.keys())
@@ -1107,7 +1110,8 @@ def timepoint_to_df(params):
         # Generate a description of textures and Hu moments of the mask
         description = generate_description(df['mask'].values[0],
                                            tran[df['z'].values[0]],
-                                           fluo[df['z'].values[0]])
+                                           fluo[df['z'].values[0]],
+                                           auto[df['z'].values[0]],)
 
         for prop in description.keys():
             if isinstance(description[prop], (tuple, list, np.ndarray)):
@@ -1117,6 +1121,7 @@ def timepoint_to_df(params):
 
         df['tran_path'] = str(filepath)
         df['fluo_path'] = str(fluo_filepath)
+        df['auto_path'] = str(auto_filepath)
         df['crop'] = [region]
         df['timepoint'] = ndx
 
