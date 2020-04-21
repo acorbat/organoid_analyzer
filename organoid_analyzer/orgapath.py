@@ -21,8 +21,12 @@ def scan_folder(folder):
         if yfp.is_dir() or yfp.suffix.lower() != '.tif':
             continue
         trans = yfp.with_name(yfp.name.replace('YFP', 'Trans'))
-        if trans.exists():
-            yield trans, yfp
+        if not trans.exists():
+            trans = None
+        auto = yfp.with_name(yfp.name.replace('YFP', 'CFPYFP'))
+        if not auto.exists():
+            auto = None
+        yield trans, yfp, auto
 
 
 def create_base_yaml(folder, output):
@@ -53,8 +57,8 @@ def append_to_yaml(folder, output, filename_or_dict):
     else:
         d = filename_or_dict
 
-    for trans, yfp in scan_folder(folder):
-        d[str(trans)] = {'yfp': str(yfp)}
+    for trans, yfp, auto in scan_folder(folder):
+        d[str(trans)] = {'yfp': str(yfp), 'auto': str(auto)}
 
     with open(output, 'w', encoding='utf-8') as fo:
         fo.write(yaml.dump(d))
