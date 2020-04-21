@@ -324,11 +324,11 @@ class Organyzer(object):
         return new_paths
 
 
-def _my_iterator(filepath, fluo_filepath, region, last_time):
+def _my_iterator(filepath, fluo_filepath, auto_filepath, region, last_time):
     """Generates an iterator over the stack of images to use for
     multiprocessing."""
 
     keys = im.get_keys(filepath, last_time)
 
     for ndx, (key) in enumerate(keys):
-        yield ndx, key, filepath, fluo_filepath, region
+        yield ndx, key, filepath, fluo_filepath, auto_filepath, region
