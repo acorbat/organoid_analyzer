@@ -1088,7 +1088,9 @@ def timepoint_to_df(params):
 
     tran = tran_img.asarray(key=key)
     fluo = fluo_img.asarray(key=key)
+    fluo = util.img_as_float(fluo)
     auto = auto_img.asarray(key=key)
+    auto = util.img_as_float(auto)
 
     if len(tran.shape) == 2:
         tran = tran[np.newaxis, :]
