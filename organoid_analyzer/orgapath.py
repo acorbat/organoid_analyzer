@@ -21,8 +21,12 @@ def scan_folder(folder):
         if yfp.is_dir() or yfp.suffix.lower() != '.tif':
             continue
         trans = yfp.with_name(yfp.name.replace('YFP', 'Trans'))
-        if trans.exists():
-            yield trans, yfp
+        if not trans.exists():
+            trans = None
+        auto = yfp.with_name(yfp.name.replace('YFP', 'CFPYFP'))
+        if not auto.exists():
+            auto = None
+        yield trans, yfp, auto
 
 
 def create_base_yaml(folder, output):
@@ -53,8 +57,8 @@ def append_to_yaml(folder, output, filename_or_dict):
     else:
         d = filename_or_dict
 
-    for trans, yfp in scan_folder(folder):
-        d[str(trans)] = {'yfp': str(yfp)}
+    for trans, yfp, auto in scan_folder(folder):
+        d[str(trans)] = {'yfp': str(yfp), 'auto': str(auto)}
 
     with open(output, 'w', encoding='utf-8') as fo:
         fo.write(yaml.dump(d))
@@ -170,11 +174,11 @@ class Timer(object):
     """As clear as the name."""
 
     def __enter__(self):
-        self.t = time.clock()
+        self.t = time.perf_counter()
         return self
 
     def __exit__(self, type, value, traceback):
-        self.elapsed = time.clock() - self.t
+        self.elapsed = time.perf_counter()
 
 
 def load_mp_image(filenames, dcrop=None):
@@ -228,7 +232,8 @@ def load_stack(filenames, dcrop=None):
                 yield filename, None
 
 
-def add_crop_to_yaml(filename, crop_filename=None):
+def add_crop_to_yaml(filename, crop_filename=None, max_images_buffered_time=2,
+                     max_images_buffered_region=10):
     """Opens filename dictionary and asks for a crop to be saved at filename +
     _crop. If crop_filename is given, then it checks whether a crop has been
     saved."""
@@ -246,7 +251,8 @@ def add_crop_to_yaml(filename, crop_filename=None):
     # Manage Time crops
     try:
         for ndx, (k, image_or_crop) in \
-                enumerate(ibuffer(2, load_stack(dinput.keys(), dcrop))):
+                enumerate(ibuffer(max_images_buffered_time,
+                                  load_stack(dinput.keys(), dcrop))):
             print('%d/%d: %s' % (ndx, len(dinput), k))
             v = dinput[k]
 
@@ -271,7 +277,7 @@ def add_crop_to_yaml(filename, crop_filename=None):
     # Manage Rectangle crops
     try:
         for ndx, (k, image_or_crop) in \
-                enumerate(ibuffer(10, load_mp_image(dinput.keys(), dout))):
+                enumerate(ibuffer(max_images_buffered_region, load_mp_image(dinput.keys(), dout))):
             print('%d/%d: %s' % (ndx, len(dinput), k))
             v = dinput[k]
 

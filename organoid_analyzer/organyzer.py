@@ -25,6 +25,10 @@ class Organyzer(object):
         self.set_output_path_and_load_df()
 
         # set parameters for analysis and saving files
+        self.max_images_buffered_time = 2  # Maximum number of images buffered
+        # for time cropping
+        self.max_images_buffered_region = 10  # Maximum number of images
+        # buffered for region cropping
         self.workers = 5  # How many threads can be used
 
     def set_output_path_and_load_df(self):
@@ -35,6 +39,7 @@ class Organyzer(object):
         self.output_path = self.output_path.joinpath(self.output_name
                                                      + '.pandas')
         if self.output_path.exists():
+            print('Loading previous DataFrame: %s' % str(self.output_path))
             self.df = self.load_pandas()
 
             if self.overwrite:
@@ -123,9 +128,13 @@ class Organyzer(object):
         loads the dictionary with the crops."""
         if self.filepath_yaml_crop.exists():
             op.add_crop_to_yaml(str(self.filepath_yaml),
-                                crop_filename=self.filepath_yaml_crop)
+                                crop_filename=self.filepath_yaml_crop,
+                                max_images_buffered_time=self.max_images_buffered_time,
+                                max_images_buffered_region=self.max_images_buffered_region)
         else:
-            op.add_crop_to_yaml(str(self.filepath_yaml))
+            op.add_crop_to_yaml(str(self.filepath_yaml),
+                                max_images_buffered_time=self.max_images_buffered_time,
+                                max_images_buffered_region=self.max_images_buffered_region)
 
         self.file_dict = self.load_yaml(self.filepath_yaml_crop)
 
@@ -134,18 +143,20 @@ class Organyzer(object):
 
         for file in self.file_dict.keys():
             fluo_file = self.file_dict[file]['yfp']
+            auto_file = self.file_dict[file]['auto']
             region = self.file_dict[file]['crop']
             last_time = self.file_dict[file].get('time_crop')
 
-            file, fluo_file = self._check_path((file, fluo_file))
+            file, fluo_file, auto_file = self._check_path((file, fluo_file,
+                                                           auto_file))
 
             print('Analyzing file: %s' % file)
 
-            if self.df is not None and file in self.df.tran_path.values:
+            if self.df is not None and str(file) in self.df.tran_path.values:
                 print('%s has already been analyzed' % file)
                 continue
 
-            this_file_res = self._analyze_file(file, fluo_file,
+            this_file_res = self._analyze_file(file, fluo_file, auto_file,
                                                region, last_time)
 
             print('Saving file: %s' % file)
@@ -158,7 +169,8 @@ class Organyzer(object):
                 self.df = this_df.copy()
             self.save_results()
 
-    def _analyze_file(self, filepath, fluo_filepath, region, last_time):
+    def _analyze_file(self, filepath, fluo_filepath, auto_filepath, region,
+                      last_time):
         """Multiprocesses the analysis over a complete stack.
 
             Parameters
@@ -166,6 +178,8 @@ class Organyzer(object):
             filepath : str
                 path to the transmission stack
             fluo_filepath : str
+                path to the fluorescence stack
+            auto_filepath : str
                 path to the fluorescence stack
             region : list, tuple
                 coordinates of the cropped region
@@ -183,6 +197,7 @@ class Organyzer(object):
             for this_df in p.imap_unordered(morpho.timepoint_to_df,
                                             _my_iterator(filepath,
                                                          fluo_filepath,
+                                                         auto_filepath,
                                                          region,
                                                          last_time)):
                 file_results.append(this_df)
@@ -309,11 +324,11 @@ class Organyzer(object):
         return new_paths
 
 
-def _my_iterator(filepath, fluo_filepath, region, last_time):
+def _my_iterator(filepath, fluo_filepath, auto_filepath, region, last_time):
     """Generates an iterator over the stack of images to use for
     multiprocessing."""
 
     keys = im.get_keys(filepath, last_time)
 
     for ndx, (key) in enumerate(keys):
-        yield ndx, key, filepath, fluo_filepath, region
+        yield ndx, key, filepath, fluo_filepath, auto_filepath, region

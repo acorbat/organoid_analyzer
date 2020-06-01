@@ -9,17 +9,19 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 from scipy import signal, ndimage as ndi
+from scipy.spatial.distance import euclidean
 import scipy.stats as st
 from skimage import segmentation, draw, filters, measure, io as skio, \
     morphology, exposure, feature, transform, util
-from sklearn.neighbors import NearestNeighbors
-
+from sklearn.neighbors import NearestNeighbors, KDTree
 import tifffile as tif
+
+from . import fluorescence_estimation as fe
 
 active_contour = segmentation.active_contour
 
 
-def mask_organoids(img, region, min_organoid_size=1000):
+def mask_organoids(img, region, min_organoid_size=2500):
     """Processes transmission image in order to find organoids. It performs:
     1. Rescaling of intensity to float.
     2. inversion of intensities.
@@ -122,7 +124,8 @@ def get_init_snake(mask, region):
      borders of the mask."""
     mask = morphology.binary_dilation(mask, selem=morphology.disk(3))
     distance = ndi.distance_transform_edt(~mask)
-    init_snake = find_external(distance, region, mult=-10, gamma=0.001)
+    distance += mask * 1000
+    init_snake = find_external(distance, region, mult=-100, gamma=0.001)
     return init_snake
 
 
@@ -154,7 +157,7 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
     
     im = filters.gaussian(img, 5)
     snake = active_contour(im,
-                           init_snake, alpha=0.015, beta=0.1, gamma=gamma*10,
+                           init_snake, alpha=0.015, beta=0.01, gamma=gamma*10,
                            w_line=mult*0.1, w_edge=10)
             
     # im = filters.gaussian(img, 2)
@@ -164,9 +167,9 @@ def find_external(img, init_snake, mult=-1, gamma=0.0001):
     # w_line=0, w_edge=1, gamma=0.01,
     # bc='periodic', max_px_move=1.0,
     # max_iterations=2500, convergence=0.1
-    snake = active_contour(im,
-                           snake, alpha=0.015, beta=0.01, gamma=gamma*100,
-                           w_line=mult*0.1, w_edge=5)
+    # snake = active_contour(im,
+    #                        snake, alpha=0.015, beta=0.01, gamma=gamma*100,
+    #                        w_line=mult*0.1, w_edge=5)
     return snake
 
 
@@ -282,13 +285,177 @@ def mask_to_snake(mask):
 
 def snake_to_mask(snake, shape):
     img = np.zeros(shape, 'uint8')
-    snake = sort_snake(snake)
+    snake = sort_border(snake)
     try:
         rr, cc = draw.polygon(snake[:, 1], snake[:, 0], shape)
         img[rr, cc] = 1
     except ValueError:
         print(snake.shape, shape)
     return img
+
+
+def sort_border(border_coords, piece_length=50, max_distance=20,
+                max_iterations=100):
+    """Sorts the coordinates of the border of the mask.
+
+    Parameters
+    ----------
+    border_coords : array
+        Coordinates of the border of the mask
+    piece_length : int
+        Maximum length of the pieces that are allowed after first sort
+    max_distance : int
+        Maximum distance between points allowed after second sort
+    max_iterations : int
+        Maximum number of deletions allowed on second sort
+
+    Returns
+    -------
+    sorted_points : numpy.ndarray 2D
+        Sorted array of points; shape=(number of points, 2)
+    """
+    if len(border_coords) == 2:
+        points = np.c_[border_coords[1], border_coords[0]]
+    else:
+        points = border_coords.copy()
+    
+    # FInd first point
+    _, _, theta = polar_snake(points)
+    first_point = np.argsort(theta)[0]
+
+    # First sort with KD Tree
+    sorted_points = kdtree_sorter(points, first_point)
+
+    # Separating in pieces and resorting
+    sorted_points = resort_by_pieces(sorted_points,
+                                     length_threshold=piece_length)
+
+    # Deleting the remaining points that are far away
+    sorted_points = delete_far_points(sorted_points,
+                                      distance_threshold=max_distance,
+                                      max_iterations=max_iterations)
+
+    # It may happen after sorting that it is going anti-clockwise so we have to
+    # invert order
+    if sorted_points[100, 1] > sorted_points[0, 1]:
+        sorted_points = sorted_points[::-1]
+
+    return sorted_points
+
+
+def kdtree_sorter(points, first_point=0):
+    """Sorts points using KD Tree starting from first_point (index of point)"""
+    sorted_points = []
+    remaining_points = points.copy()
+
+    nearest_point_ind = first_point
+    sorted_points.append(remaining_points[nearest_point_ind])
+    remaining_points = np.delete(remaining_points, nearest_point_ind, axis=0)
+
+    while len(remaining_points) > 0:
+        #     print('Remaining points: %s' % len(remaining_points))
+        tree = KDTree(remaining_points, leaf_size=2,
+                      metric='euclidean')  # Create a distance tree
+        dist, nearest_point_ind = tree.query(sorted_points[-1].reshape(1, -1),
+                                             k=1)
+
+        sorted_points.append(remaining_points[nearest_point_ind][0][0])
+        remaining_points = np.delete(remaining_points, nearest_point_ind,
+                                     axis=0)
+    return np.asarray(sorted_points)
+
+
+def calculate_distances(points):
+    """Calculates euclidean distance between consecutive points"""
+    distance = np.asarray(
+        [euclidean(points[i], points[i + 1]) for i in range(len(points) - 1)])
+    return distance
+
+
+def resort_by_pieces(sorted_points, length_threshold=100):
+    """Separates the ordered points into pieces where big jumps have been
+    done. Short pieces are discarded and the remaining ones are reordered."""
+    far_points = np.where(calculate_distances(sorted_points) > 6)[0]
+
+    if len(far_points) == 0:
+        print('There were no far points')
+        return sorted_points
+
+    pieces = []
+    pieces.append(sorted_points[0:far_points[0] + 1])
+
+    for i in range(len(far_points) - 1):
+        pieces.append(sorted_points[far_points[i] + 1:far_points[i + 1] + 1])
+
+    if len(far_points) == 1:
+        pieces.append(sorted_points[far_points[0] + 1:])
+    else:
+        pieces.append(sorted_points[far_points[i + 1] + 1:])
+
+    long_pieces = []
+    for this_piece in pieces:
+        if len(this_piece) > length_threshold:
+            long_pieces.append(this_piece)
+    pieces = long_pieces
+
+    new_sorted_points = []
+    new_sorted_points.extend(pieces[0])
+    pieces.pop(0)
+
+    while len(pieces) > 0:
+        pieces_distance_first = [
+            euclidean(new_sorted_points[-1], this_piece[0]) for this_piece in
+            pieces]
+        pieces_distance_last = [
+            euclidean(new_sorted_points[-1], this_piece[-1]) for this_piece in
+            pieces]
+
+        if min(pieces_distance_first) <= min(pieces_distance_last):
+            ind = np.argmin(pieces_distance_first)
+            new_sorted_points.extend(pieces[ind])
+            pieces.pop(ind)
+
+        elif min(pieces_distance_first) > min(pieces_distance_last):
+            print('invert')
+            ind = np.argmin(pieces_distance_last)
+            new_sorted_points.extend(pieces[ind][::-1])
+            pieces.pop(ind)
+
+    new_sorted_points = np.asarray(new_sorted_points)
+    return new_sorted_points
+
+
+def delete_far_points(sorted_points, distance_threshold=20, max_iterations=40):
+    """Deletes every point that is farther than distance_threshold, unless more
+    than max_iterations is required."""
+    new_sorted_points = sorted_points.copy()
+    distance = calculate_distances(new_sorted_points)
+    iteration = 0
+    while any(distance > distance_threshold):
+        new_sorted_points = np.delete(new_sorted_points,
+                                      np.where(distance > 20)[0], axis=0)
+        distance = calculate_distances(new_sorted_points)
+
+        if iteration > max_iterations:
+            print('Too many points would have been deleted. Try other direction.')
+            iteration = 0
+            new_sorted_points = sorted_points.copy()
+            distance = calculate_distances(new_sorted_points)
+
+            while any(distance > 20):
+                new_sorted_points = np.delete(new_sorted_points,
+                                              np.where(distance > 20)[0] + 1,
+                                              axis=0)
+                distance = calculate_distances(new_sorted_points)
+                if iteration > max_iterations:
+                    print('Too many points in both directions.')
+                    return sorted_points
+                iteration += 1
+            return new_sorted_points
+
+        iteration += 1
+
+    return new_sorted_points
 
 
 def _and_(*conds):
@@ -636,12 +803,14 @@ def get_texture_description(img, mask):
     return description
 
 
-def generate_description(mask, img):
+def generate_description(mask, trans, fluo, auto):
     """Generates a dictionary with the descriptors of the snake and image
     provided."""
-    # mask = snake_to_mask(snake, img.shape)
+    # mask = snake_to_mask(snake, trans.shape)
     description = get_description(mask)
-    description.update(get_texture_description(img, mask))
+    description.update(get_texture_description(trans, mask))
+    trans, fluo, auto = fe.correct_stacks(trans, fluo, auto)
+    description.update(fe.get_fluorescence_estimators(fluo, mask))
 
     return description
 
@@ -792,7 +961,7 @@ def protocol(stack, region):
     return e_snks, i_snks
 
 
-def segment_timepoint(tran, fluo, region):
+def segment_timepoint(tran, region):
     """Analyzes a single pair of transmission and fluorescence timepoint, with
     the specified region of the desired organoid and returns a dictionary with
     the results.
@@ -909,15 +1078,19 @@ def timepoint_to_df(params):
     df : pandas DataFrame
         Small DataFrame with the results of a single timepoint analysis."""
 
-    ndx, key, filepath, fluo_filepath, region = params
+    ndx, key, filepath, fluo_filepath, auto_filepath, region = params
 
     print('analyzing timepoint %s from file %s' % (ndx, filepath))
 
     tran_img = tif.TiffFile(str(filepath))
     fluo_img = tif.TiffFile(str(fluo_filepath))
+    auto_img = tif.TiffFile(str(auto_filepath))
 
     tran = tran_img.asarray(key=key)
     fluo = fluo_img.asarray(key=key)
+    fluo = util.img_as_float(fluo)
+    auto = auto_img.asarray(key=key)
+    auto = util.img_as_float(auto)
 
     if len(tran.shape) == 2:
         tran = tran[np.newaxis, :]
@@ -928,7 +1101,7 @@ def timepoint_to_df(params):
     if tran[0, 0, 0] >= 2**15:
         tran -= 2**15
 
-    to_save = segment_timepoint(tran, fluo, region)
+    to_save = segment_timepoint(tran, region)
 
     dfs = []
     dict_keys = list(to_save.keys())
@@ -936,8 +1109,11 @@ def timepoint_to_df(params):
         df = pd.DataFrame({this_key: this_val
                            for this_key, this_val in zip(dict_keys, vals)})
 
+        # Generate a description of textures and Hu moments of the mask
         description = generate_description(df['mask'].values[0],
-                                           tran[df['z'].values[0]])
+                                           tran[df['z'].values[0]],
+                                           fluo[df['z'].values[0]],
+                                           auto[df['z'].values[0]],)
 
         for prop in description.keys():
             if isinstance(description[prop], (tuple, list, np.ndarray)):
@@ -945,8 +1121,9 @@ def timepoint_to_df(params):
             else:
                 df[prop] = description[prop]
 
-        df['tran_path'] = filepath
-        df['fluo_path'] = fluo_filepath
+        df['tran_path'] = str(filepath)
+        df['fluo_path'] = str(fluo_filepath)
+        df['auto_path'] = str(auto_filepath)
         df['crop'] = [region]
         df['timepoint'] = ndx
 
