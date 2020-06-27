@@ -1,3 +1,4 @@
+import pathlib
 from collections import Counter
 import pickle
 
@@ -13,14 +14,17 @@ class Normalizer(object):
     def __init__(self):
         self.norm_dict = {}
 
-    def normalize(self, col, vals):
-        vals -= self.norm_dict[col]['min']
-        vals /= self.norm_dict[col]['max']
+    def normalize(self, df):
+        for col, minmax in self.norm_dict.items():
+            df[col + '_normalized'] = (df[col] - minmax['min']) / minmax['max']
 
-        return vals
-
-    def find_normalization(self, col, vals):
-        self.norm_dict[col] = {'min': min(vals), 'max': max(vals)}
+    def find_normalization(self, df, col):
+        if isinstance(col, str):
+            self.norm_dict[col] = {'min': min(df[col].values),
+                                   'max': max(df[col].values)}
+        else:
+            for this_col in col:
+                self.find_normalization(df, this_col)
 
     def save(self, path):
         """Save actual state of normalizer to json.
@@ -80,7 +84,11 @@ class Classifier(object):
         return c_predict
 
     def save(self, path):
-        pickle.dump(self.clf, open(path, 'wb'))
+        path = pathlib.Path(path)
+        pickle.dump(self.clf, open(str(path), 'wb'))
+        dump(self.cols, str(path.with_suffix('.json')))
 
     def load(self, path):
-        self.clf = pickle.load(open(path, 'rb'))
+        path = pathlib.Path(path)
+        self.clf = pickle.load(open(str(path), 'rb'))
+        self.cols = load(str(path.with_suffix('.json')))

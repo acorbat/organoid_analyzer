@@ -5,9 +5,11 @@ import multiprocessing
 import numpy as np
 import pandas as pd
 
+from . import classifier as clf
 from . import orgapath as op
 from . import morpho
 from . import image_manager as im
+from . import visvis as vv
 
 
 class Organyzer(object):
@@ -30,6 +32,10 @@ class Organyzer(object):
         self.max_images_buffered_region = 10  # Maximum number of images
         # buffered for region cropping
         self.workers = 5  # How many threads can be used
+
+        # Set normalizers and classifiers
+        self.normalizer = None
+        self.classifier = None
 
     def set_output_path_and_load_df(self):
         """Looks for existing saved pandas files, loads them if existent and
@@ -209,6 +215,7 @@ class Organyzer(object):
         return df
 
     def update(self):
+        """Deprecated method."""
         this_file_res = []
 
         for file in self.file_dict.keys():
@@ -243,12 +250,16 @@ class Organyzer(object):
         self.save_results()
 
     def describe_better(self):
+        """Uses Haralick features to estimate the best plane in focus and
+        estimates the Hu moments of this plane. columns added: haralick_n,
+        z_best_haralick_n, focus_plane (boolean) and best_hu_moments (list)."""
 
         for num in range(1, 14):
             self.df['haralick_' + str(num) + '_best'] = np.nan
             self.df['z_best_haralick_' + str(num)] = np.nan
             self.df['focus_plane'] = False
-            self.df['best_hu_moments'] = [[np.nan] * 7] * len(self.df)
+        for j in range(1, 8):
+            self.df['hu_moments_%s_best' % str(j)] = np.nan
 
         z_prev = 3
         z_hu = 0
@@ -288,9 +299,26 @@ class Organyzer(object):
             z_hu, hus = morpho.best_hu(z, hu_matrix, z_best_prev=z_hu)
 
             for i in this_df.index:
-                self.df.at[i, 'best_hu_moments'] = hus
+                for j in range(1, 8):
+                    self.df.at[i, 'hu_moment_%s_best' % str(j)] = hus[j-1]
+
+        self.estimate_total_fluorescence()
 
         self.save_results()
+
+    def estimate_total_fluorescence(self):
+        """Estimates Fluorescence by averaging Otsu mean values from different
+        planes."""
+        self.df['sum'] = self.df['otsu_mean'].values * self.df['otsu_area'].values
+
+        self.df['temp_0'] = self.df.groupby(
+            ['tran_path', 'timepoint'])['sum'].transform('sum')
+        self.df['temp_1'] = self.df.groupby(
+            ['tran_path', 'timepoint'])['otsu_area'].transform('sum')
+
+        self.df['total_otsu_mean'] = self.df['temp_0'] / self.df['temp_1']
+
+        self.df = self.df.drop(['temp_0', 'temp_1'], axis=1)
 
     def _check_path(self, paths):
         """Checks whether the given paths are in the same filepath as the yaml
@@ -322,6 +350,73 @@ class Organyzer(object):
                 new_paths = paths
 
         return new_paths
+
+    def load_normalizer(self, path):
+        """Loads normalizer from path"""
+        normalizer = clf.Normalizer()
+        normalizer.load(path)
+        self.normalizer = normalizer
+
+    def load_classifier(self, path):
+        """Loads classifier from path"""
+        classifier = clf.Classifier()
+        classifier.load(path)
+        self.classifier = classifier
+
+    def classify(self):
+        """Runs the normalizer and classifier over every timepoint."""
+        if self.normalizer is None:
+            raise ValueError('No normalizer was loaded.')
+        if self.classifier is None:
+            raise ValueError('No classifier was loaded.')
+
+        self.normalizer.normalize(self.df)
+        self.df['state'] = self.classifier.classify(self.df)
+
+        self.save_results()
+
+    def plot_border_int_gif(self):
+        """Generates a folder with all the gifs showing the intensity of border
+        pixels."""
+
+        save_path = self.output_path.parent.with_name(
+            self.output_path.parent.name + '_border_intensities')
+
+        if not save_path.exists():
+            save_path.mkdir(parents=True, exist_ok=True)
+
+        for this_file, this_df in self.df.groupby('tran_path'):
+            fluo_file = this_df.fluo_path.values[0]
+            auto_file = this_df.auto_path.values[0]
+            paths = self._check_path((this_file, fluo_file, auto_file))
+
+            this_df = this_df.query('focus_plane')
+
+            save_dir = save_path.joinpath(paths[1].stem + '_border_int.gif')
+
+            vv.make_border_int_gif(this_df, paths, save_dir)
+
+    def plot_segmentation_and_state_gif(self):
+        """Generates a folder with all the gifs showing transmission,
+        fluorescence, segmentation, classification and fluorescence
+        estimation."""
+
+        save_path = self.output_path.parent.with_name(
+            self.output_path.parent.name + '_segmentation_and_state')
+
+        if not save_path.exists():
+            save_path.mkdir(parents=True, exist_ok=True)
+
+        for this_file, this_df in self.df.groupby('tran_path'):
+            fluo_file = this_df.fluo_path.values[0]
+            auto_file = this_df.auto_path.values[0]
+            paths = self._check_path((this_file, fluo_file, auto_file))
+
+            this_df = this_df.query('focus_plane')
+
+            save_dir = save_path.joinpath(paths[1].stem + '_border_int.gif')
+
+            vv.make_segmentation_and_state_gif(this_df, paths, save_dir)
 
 
 def _my_iterator(filepath, fluo_filepath, auto_filepath, region, last_time):

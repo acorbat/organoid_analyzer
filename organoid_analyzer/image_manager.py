@@ -213,3 +213,9 @@ def load_stack(filepath, last_time=None):
     stack = stack.reshape(*keys.shape, *stack.shape[-2:])
 
     return stack
+
+
+def load_image(filepath, keys):
+    img_file = tif.TiffFile(str(filepath))
+    image = img_file.asarray(key=keys)
+    return util.img_as_float(image)

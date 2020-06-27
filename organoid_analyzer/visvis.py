@@ -10,6 +10,13 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 import numpy as np
 
 from . import morpho
+from . import fluorescence_estimation as fe
+from . import image_manager as im
+
+# Define useful cmap
+HiLo_cmap = plt.cm.get_cmap('Greys_r')
+HiLo_cmap.set_under('b')
+HiLo_cmap.set_over('r')
 
 
 def show_snakes(img, *snakes):
@@ -299,3 +306,107 @@ def make_gif(stacks, df, clf, save_dir):
         images.append(img)
 
     imageio.mimsave(str(save_dir), images, fps=2)
+
+
+def make_border_int_gif(this_df, paths, save_dir):
+    this_file, fluo_file, auto_file = paths
+    ts = this_df.timepoint.values
+    zs = this_df.z.values
+    max_coords_len = this_df.border_values.apply(len).max()
+    keys = im.get_keys(this_file, last_time=ts[-1])[ts, zs]
+    max_int = this_df.otsu_mean.max() + 3 * np.nanstd(this_df.otsu_mean.values)
+
+    with imageio.get_writer(str(save_dir), mode='I', fps=2) as writer:
+        for t in ts:
+            print('Generating image for file %s and timepoint %s' % (str(this_file), t))
+            df_t = this_df.query('timepoint == %s' % t)
+            snk = df_t.external_snake.values[0]
+            ints = df_t.border_values.values[0]
+            sorted_points = morpho.sort_border(snk)
+            sorted_points[:, 0] -= 14
+            sorted_points[:, 1] -= 12
+
+            fig, axs = plt.subplots(2, 1, figsize=(5, 7), dpi=200)
+
+            stack_yfp = im.load_image(fluo_file, keys[t])
+            stack_cfpyfp = im.load_image(auto_file, keys[t])
+
+            _, stack_yfp, corr_stack_cfpyfp = fe.correct_stacks(
+                np.ones_like(stack_yfp), stack_yfp, stack_cfpyfp)
+
+            this_im = axs[0].imshow(stack_yfp, cmap=HiLo_cmap, vmin=0,
+                                    vmax=max_int)
+            axs[0].scatter(sorted_points[:, 0], sorted_points[:, 1],
+                           c=np.arange(len(sorted_points)), s=0.5)
+            fig.colorbar(this_im, ax=axs[0])
+
+            axs[0].axis('off')
+
+            axs[1].scatter(np.arange(len(sorted_points)), ints,
+                           c=np.arange(len(sorted_points)),
+                           s=2)
+
+            axs[1].set_ylim((0, max_int))
+            axs[1].set_xlim((0, max_coords_len))
+            axs[1].set_title('Timepoint: %s' % t)
+            plt.tight_layout()
+            img = get_array_from_fig(fig)
+            writer.append_data(img)
+            plt.close()
+
+
+def make_segmentation_and_state_gif(this_df, paths, save_dir):
+    this_file, fluo_file, auto_file = paths
+    ts = this_df.timepoint.values
+    zs = this_df.z.values
+    max_coords_len = this_df.border_values.apply(len).max()
+    keys = im.get_keys(this_file, last_time=ts[-1])[ts, zs]
+    max_int = this_df.otsu_mean.max() + 3 * np.nanstd(this_df.otsu_mean.values)
+    ints = this_df.total_otsu_mean.values
+
+    with imageio.get_writer(str(save_dir), mode='I', fps=2) as writer:
+        for t in ts:
+            print('Generating image for file %s and timepoint %s' % (str(this_file), t))
+            df_t = this_df.query('timepoint == %s' % t)
+            state = df_t.state.values[0]
+            snk = df_t.external_snake.values[0]
+            sorted_points = morpho.sort_border(snk)
+
+            fig, axs = plt.subplots(1, 3, figsize=(10, 3), dpi=200)
+
+            stack_tran = im.load_image(this_file, keys[t])
+            stack_yfp = im.load_image(fluo_file, keys[t])
+            stack_cfpyfp = im.load_image(auto_file, keys[t])
+
+            stack_tran, stack_yfp, corr_stack_cfpyfp = fe.correct_stacks(
+                stack_tran, stack_yfp, stack_cfpyfp)
+
+            axs[0].imshow(stack_tran, cmap=HiLo_cmap)
+            axs[0].scatter(sorted_points[:, 0], sorted_points[:, 1], s=0.25,
+                           c='r')
+
+            axs[0].axis('off')
+            axs[0].set_title('Transmission')
+
+            sorted_points[:, 0] -= 14
+            sorted_points[:, 1] -= 12
+
+            this_im = axs[1].imshow(stack_yfp, cmap=HiLo_cmap, vmin=0,
+                                    vmax=max_int)
+            fig.colorbar(this_im, ax=axs[1])
+
+            axs[1].scatter(sorted_points[:, 0], sorted_points[:, 1], s=0.25,
+                           c='r')
+
+            axs[1].axis('off')
+            axs[1].set_title('Fluorescence')
+
+            axs[2].plot(ts, ints)
+            axs[2].axvline(x=t, color='gray', ls='--', alpha=0.5)
+            axs[2].set_title('Fluorescence Estimation')
+
+            plt.suptitle('timepoint: %s, state: %s' % (t, state))
+            plt.tight_layout()
+            img = get_array_from_fig(fig)
+            writer.append_data(img)
+            plt.close()
