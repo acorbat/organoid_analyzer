@@ -361,7 +361,6 @@ def make_segmentation_and_state_gif(this_df, paths, save_dir):
     this_file, fluo_file, auto_file = paths
     ts = this_df.timepoint.values
     zs = this_df.z.values
-    max_coords_len = this_df.border_values.apply(len).max()
     keys = im.get_keys(this_file, last_time=ts[-1])[ts, zs]
     max_int = this_df.otsu_mean.max() + 3 * np.nanstd(this_df.otsu_mean.values)
     ints = this_df.total_otsu_mean.values

@@ -414,7 +414,7 @@ class Organyzer(object):
 
             this_df = this_df.query('focus_plane')
 
-            save_dir = save_path.joinpath(paths[1].stem + '_border_int.gif')
+            save_dir = save_path.joinpath(paths[1].stem + '_segmentation_and_state.gif')
 
             vv.make_segmentation_and_state_gif(this_df, paths, save_dir)
 
