@@ -348,6 +348,8 @@ def make_border_int_gif(this_df, paths, save_dir):
 
             axs[1].set_ylim((0, max_int))
             axs[1].set_xlim((0, max_coords_len))
+            axs[1].set_xlabel('pixel number')
+            axs[1].set_ylabel('Fluorescence Estimation')
             axs[1].set_title('Timepoint: %s' % t)
             plt.tight_layout()
             img = get_array_from_fig(fig)
@@ -403,6 +405,8 @@ def make_segmentation_and_state_gif(this_df, paths, save_dir):
 
             axs[2].plot(ts, ints)
             axs[2].axvline(x=t, color='gray', ls='--', alpha=0.5)
+            axs[2].set_xlabel('timepoint')
+            axs[2].set_ylabel('Fluorescence Estimation')
             axs[2].set_title('Fluorescence Estimation')
 
             plt.suptitle('timepoint: %s, state: %s' % (t, state))
