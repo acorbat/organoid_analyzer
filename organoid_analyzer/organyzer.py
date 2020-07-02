@@ -302,6 +302,10 @@ class Organyzer(object):
                 for j in range(1, 8):
                     self.df.at[i, 'hu_moment_%s_best' % str(j)] = hus[j-1]
 
+        self.df['border_distance'] = self.df.apply(lambda x: morpho.euclid_dist(x.sorted_coords,
+                                                                                x.centroid),
+                                                   axis=1)
+
         self.estimate_total_fluorescence()
 
         self.save_results()

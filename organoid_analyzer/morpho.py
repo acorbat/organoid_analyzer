@@ -458,6 +458,13 @@ def delete_far_points(sorted_points, distance_threshold=20, max_iterations=40):
     return new_sorted_points
 
 
+def euclid_dist(t1, t2):
+    "Calculates euclidean distance between vector and point."
+    t1 = np.asarray(t1).T
+    t2 = np.asarray(t2)
+    return np.sqrt(((t1-t2)**2).sum(axis=1))
+
+
 def _and_(*conds):
     out = conds[0]
     for current in conds[1:]:

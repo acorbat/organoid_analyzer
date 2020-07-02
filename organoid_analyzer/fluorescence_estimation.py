@@ -72,6 +72,8 @@ def get_fluorescence_estimators(fluo_stack, mask):
             median of the otsu filtered border of the mask
         'otsu_area' : int
             Area of the otsu filtered border of the mask
+        'sorted_coords' : numpy.ndarray
+            Ordered coordinates of the border pixles
         'border_values' : numpy.ndarray
             Ordered array of the intensity values of the border of the mask
     """
@@ -91,7 +93,7 @@ def get_fluorescence_estimators(fluo_stack, mask):
     estimators['otsu_area'] = len(otsu_vals.flatten())
 
     # Ordered border intensity values
-    estimators['border_values'] = get_border_ordered_intensity(fluo_stack,
+    estimators['sorted_coords'], estimators['border_values'] = get_border_ordered_intensity(fluo_stack,
                                                                mask)
 
     return estimators
@@ -134,11 +136,10 @@ def get_border_ordered_intensity(img, mask=None, border_coords=None):
             mask = [None] * len(img)
         if border_coords is None:
             border_coords = [None] * len(img)
-        vals = np.asarray([get_border_ordered_intensity(this_img,
-                                                        this_mask,
-                                                        this_border_coords)
-                           for this_img, this_mask, this_border_coords
-                           in zip(img, mask, border_coords)])
+        sorted_coords, vals = np.asarray([get_border_ordered_intensity(
+            this_img, this_mask, this_border_coords)
+            for this_img, this_mask, this_border_coords
+            in zip(img, mask, border_coords)])
 
     else:
         if mask is None and border_coords is None:
@@ -151,4 +152,4 @@ def get_border_ordered_intensity(img, mask=None, border_coords=None):
         sorted_coords = tuple(map(tuple, sorted_coords.T[::-1]))
         vals = filters.gaussian(img, sigma=(10, 10))[sorted_coords]
 
-    return vals
+    return sorted_coords, vals
