@@ -315,18 +315,28 @@ def make_border_int_gif(this_df, paths, save_dir):
     max_coords_len = this_df.border_values.apply(len).max()
     keys = im.get_keys(this_file, last_time=ts[-1])[ts, zs]
     max_int = this_df.otsu_mean.max() + 3 * np.nanstd(this_df.otsu_mean.values)
+    min_dist = this_df.equivalent_diameter.min() * 0.7 / 2
+    max_dist = this_df.equivalent_diameter.max() * 1.3 / 2
 
     with imageio.get_writer(str(save_dir), mode='I', fps=2) as writer:
         for t in ts:
             print('Generating image for file %s and timepoint %s' % (str(this_file), t))
             df_t = this_df.query('timepoint == %s' % t)
-            snk = df_t.external_snake.values[0]
             ints = df_t.border_values.values[0]
-            sorted_points = morpho.sort_border(snk)
+            sorted_points = np.asarray(df_t.sorted_coords.values[0]).T[:, ::-1]
+            distance_points = df_t.border_distance.values[0]
             sorted_points[:, 0] -= 14
             sorted_points[:, 1] -= 12
 
-            fig, axs = plt.subplots(2, 1, figsize=(5, 7), dpi=200)
+            fig = plt.figure(figsize=(5, 7), dpi=200, constrained_layout=False)
+            axs = []
+
+            gs1 = fig.add_gridspec(nrows=2, ncols=1)
+            axs.append(fig.add_subplot(gs1[0]))
+
+            gs2 = gs1[1].subgridspec(nrows=2, ncols=1, hspace=0)
+            axs.append(fig.add_subplot(gs2[0]))
+            axs.append(fig.add_subplot(gs2[1], sharex=axs[1]))
 
             stack_yfp = im.load_image(fluo_file, keys[t])
             stack_cfpyfp = im.load_image(auto_file, keys[t])
@@ -346,9 +356,16 @@ def make_border_int_gif(this_df, paths, save_dir):
                            c=np.arange(len(sorted_points)),
                            s=2)
 
+            axs[2].scatter(np.arange(len(sorted_points)), distance_points,
+                        c=np.arange(len(sorted_points)), s=0.5)
+            axs[2].set_ylabel('Distance to centroid')
+            axs[2].set_ylim((min_dist, max_dist))
+
             axs[1].set_ylim((0, max_int))
             axs[1].set_xlim((0, max_coords_len))
-            axs[1].set_xlabel('pixel number')
+            axs[1].grid('on')
+            axs[2].grid('on')
+            axs[2].set_xlabel('pixel number')
             axs[1].set_ylabel('Fluorescence Estimation')
             axs[1].set_title('Timepoint: %s' % t)
             plt.tight_layout()
