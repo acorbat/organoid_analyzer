@@ -1078,7 +1078,7 @@ def timepoint_to_df(params):
     Parameters
     ----------
     params : list
-        ndx, key, region, filepath, fluo_filepath
+        ndx, key, filepath, fluo_filepath, auto_filepath, region
 
     Returns
     -------
