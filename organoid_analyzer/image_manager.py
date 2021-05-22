@@ -62,52 +62,57 @@ class ImageOrganyzer(object):
         first_folder = self.path.joinpath(self.inner_folders[0])
         for this_file in first_folder.iterdir():
             print('Concatenating %s' % str(this_file))
-            if this_file.suffix.lower() != '.tif' and \
-                    this_file.suffix.lower() != '.btf':
-                continue
-
-            this_file_name = this_file.name
-            save_path = self.save_path.joinpath(this_file_name)
-            save_path = save_path.with_suffix('.tif')
-            if save_path.exists():
-                print('File already concatenated')
-
-            stacks = []
-            metadatas = []
-            times = []
-            zetas = []
-
-            for folder in self.inner_folders:
-                this_other_file = folder.joinpath(this_file_name)
-
-                print('with ' + str(this_other_file))
-
-                if not this_other_file.exists():
-                    print("file not found")
+            try:
+                if this_file.suffix.lower() != '.tif' and \
+                        this_file.suffix.lower() != '.btf':
                     continue
 
-                metadata = get_metadata(str(this_other_file))
-                metadatas.append(metadata)
-                this_img_file = tif.TiffFile(str(this_other_file))
+                this_file_name = this_file.name
+                save_path = self.save_path.joinpath(this_file_name)
+                save_path = save_path.with_suffix('.tif')
+                if save_path.exists():
+                    print('File already concatenated')
+                    continue
 
-                times.append(int(metadata['time']))
-                zetas.append(int(metadata['z']))
+                stacks = []
+                metadatas = []
+                times = []
+                zetas = []
 
-                stack = this_img_file.asarray()
+                for folder in self.inner_folders:
+                    this_other_file = folder.joinpath(this_file_name)
 
-                stacks.append(stack)
+                    print('with ' + str(this_other_file))
 
-            stack = np.concatenate(stacks)
-            times = np.sum(times)
-            assert all(x == zetas[0] for x in zetas)
-            zetas = zetas[0]
+                    if not this_other_file.exists():
+                        print("file not found")
+                        continue
 
-            stack = stack.reshape(times, zetas, stack.shape[-2], stack.shape[-1])
-            metadata = metadatas[-1]
-            metadata['time'] = times
+                    metadata = get_metadata(str(this_other_file))
+                    metadatas.append(metadata)
+                    this_img_file = tif.TiffFile(str(this_other_file))
 
-            self.save_img(save_path, stack, axes='TZYX', create_dir=True,
-            metadata=metadata)
+                    times.append(int(metadata['time']))
+                    zetas.append(int(metadata['z']))
+
+                    stack = this_img_file.asarray()
+
+                    stacks.append(stack)
+
+                stack = np.concatenate(stacks)
+                times = np.sum(times)
+                assert all(x == zetas[0] for x in zetas)
+                zetas = zetas[0]
+
+                stack = stack.reshape(times, zetas, stack.shape[-2], stack.shape[-1])
+                metadata = metadatas[-1]
+                metadata['time'] = times
+
+                self.save_img(save_path, stack, axes='TZYX', create_dir=True,
+                metadata=metadata)
+
+            except:
+                print('Something went wrong with %s' % str(this_file))
 
     def get_region(self, filepath):
         with open(str(filepath), 'rb') as file:
